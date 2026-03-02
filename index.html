@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+    <!-- ── Primary Meta ──────────────────────────────────────────────────── -->
+    <title>WealthRadar — Personal Finance Tracker</title>
+    <meta name="description"  content="WealthRadar — Track your assets, liabilities, cash flow and net worth. Your personal finance command centre. Free forever." />
+    <meta name="keywords"     content="personal finance, net worth tracker, wealth, budget, assets, liabilities, India, INR, Tamil Nadu" />
+    <meta name="author"       content="WealthRadar" />
+
+    <!-- ── PWA / Theme ───────────────────────────────────────────────────── -->
+    <meta name="theme-color"                           content="#c8953a" />
+    <meta name="mobile-web-app-capable"                content="yes" />
+    <meta name="apple-mobile-web-app-capable"          content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title"            content="WealthRadar" />
+    <meta name="application-name"                      content="WealthRadar" />
+    <meta name="msapplication-TileColor"               content="#c8953a" />
+
+    <!-- ── Manifest & Icons ──────────────────────────────────────────────── -->
+    <link rel="manifest"         href="/manifest.json" />
+    <link rel="icon"             type="image/svg+xml"        href="/favicon.svg" />
+    <link rel="icon"             type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" sizes="180x180"             href="/apple-touch-icon.png" />
+
+    <!-- ── Open Graph ────────────────────────────────────────────────────── -->
+    <meta property="og:type"        content="website" />
+    <meta property="og:title"       content="WealthRadar — Personal Finance Tracker" />
+    <meta property="og:description" content="Track your assets, liabilities, cash flow and net worth. Free forever." />
+    <meta property="og:image"       content="/icon-512.png" />
+    <meta property="og:url"         content="https://wealthradar.web.app" />
+    <meta property="og:site_name"   content="WealthRadar" />
+
+    <!-- ── Twitter Card ──────────────────────────────────────────────────── -->
+    <meta name="twitter:card"        content="summary" />
+    <meta name="twitter:title"       content="WealthRadar" />
+    <meta name="twitter:description" content="Personal Finance Command Centre" />
+    <meta name="twitter:image"       content="/icon-512.png" />
+
+    <!-- ── Fonts ─────────────────────────────────────────────────────────── -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet" />
+
+    <!-- ── Service Worker Registration ──────────────────────────────────── -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then(r  => console.log('[WealthRadar SW] Ready:', r.scope))
+            .catch(e => console.warn('[WealthRadar SW] Failed:', e))
+        })
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
