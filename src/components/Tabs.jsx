@@ -10,6 +10,7 @@ import { useFinance }  from '../context/FinanceContext'
 import { useTotals }   from '../hooks/useTotals'
 import { StatCard, ProgressBar, DataTable, DonutSVG, ChartTooltip, Notification } from './UI'
 import EntryModal      from './EntryModal'
+import ImportModal     from './ImportModal'
 import { PALETTE, MILESTONES } from '../utils/constants'
 import { groupBy, formatCurrency, formatCompact } from '../utils/helpers'
 import { useAuth } from '../context/AuthContext'
@@ -138,65 +139,170 @@ export function Dashboard() {
 export function Assets() {
   const { data, settings, deleteItem } = useFinance()
   const { totalAssets } = useTotals()
-  const [modal, setModal] = useState(null)
-  const cur = settings.currency
-  const fmt  = v => formatCurrency(v, cur)
+  const [modal,        setModal]        = useState(null)
+  const [importModal,  setImportModal]  = useState(false)
+  const [importToast,  setImportToast]  = useState(null)
+  const cur    = settings.currency
+  const fmt    = v => formatCurrency(v, cur)
   const groups = groupBy(data?.assets || [], 'category')
+
+  const BROKER_ICONS = {
+    'Zerodha':'🟡','Groww':'🟢','MF Central':'🔵','Kuvera':'🟣',
+    'NSDL/CDSL':'🏛️','EPFO':'🏢','SBI':'🏦','HDFC Bank':'🏦',
+    'ICICI Bank':'🏦','Axis Bank':'🏦',
+  }
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
+      {/* Header */}
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:24, flexWrap:'wrap', gap:12 }}>
         <div>
           <h2 className="section-heading">Assets</h2>
-          <p style={{ color: '#6b7494', fontSize: 13, marginTop: 4 }}>
-            Total: <span style={{ color: '#3ecf8e', fontFamily: "'JetBrains Mono',monospace" }}>{fmt(totalAssets)}</span>
+          <p style={{ color:'#6b7494', fontSize:13, marginTop:4 }}>
+            Total: <span style={{ color:'#3ecf8e', fontFamily:"'JetBrains Mono',monospace" }}>{fmt(totalAssets)}</span>
+            <span style={{ color:'#3d4460', marginLeft:12 }}>{data?.assets?.length || 0} holdings</span>
           </p>
         </div>
-        <button className="btn btn-gold" onClick={() => setModal({ collection: 'assets', item: null })}>+ Add Asset</button>
+        <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+          <button className="btn btn-outline"
+            onClick={() => setImportModal(true)}
+            style={{ color:'#c8953a', borderColor:'rgba(200,149,58,0.35)', gap:8 }}>
+            📥 Import from Broker / Bank
+          </button>
+          <button className="btn btn-gold" onClick={() => setModal({ collection:'assets', item:null })}>
+            + Add Asset
+          </button>
+        </div>
       </div>
 
+      {/* Import callout — shown when no assets yet */}
+      {(!data?.assets || data.assets.length === 0) && (
+        <div style={{
+          marginBottom:20, padding:'24px 28px',
+          background:'linear-gradient(135deg,rgba(200,149,58,0.06),rgba(62,207,142,0.04))',
+          border:'1px dashed rgba(200,149,58,0.3)', borderRadius:14,
+          textAlign:'center',
+        }}>
+          <div style={{ fontSize:36, marginBottom:12 }}>📊</div>
+          <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:20, color:'#e2e4ec', marginBottom:8 }}>
+            Import your existing portfolio
+          </div>
+          <div style={{ fontSize:13, color:'#6b7494', marginBottom:20, maxWidth:440, margin:'0 auto 20px' }}>
+            Connect holdings from Zerodha, Groww, MF Central, CAMS, EPFO, your bank and more — in one click.
+          </div>
+          <div style={{ display:'flex', justifyContent:'center', gap:10, flexWrap:'wrap', marginBottom:20 }}>
+            {['🟡 Zerodha','🟢 Groww','🔵 MF Central','🟣 Kuvera','🏛️ NSDL/CDSL','🏦 Banks'].map(b => (
+              <div key={b} style={{ padding:'5px 12px', background:'#0d1117', border:'1px solid #1a1f2e', borderRadius:20, fontSize:12, color:'#a0aac0' }}>
+                {b}
+              </div>
+            ))}
+          </div>
+          <div style={{ display:'flex', justifyContent:'center', gap:12 }}>
+            <button className="btn btn-gold" onClick={() => setImportModal(true)}>📥 Import Holdings</button>
+            <button className="btn btn-outline" onClick={() => setModal({ collection:'assets', item:null })}>+ Add Manually</button>
+          </div>
+        </div>
+      )}
+
+      {/* Quick-import chips per category */}
+      {data?.assets?.length > 0 && (
+        <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:20 }}>
+          <span style={{ fontSize:12, color:'#6b7494', alignSelf:'center', marginRight:4 }}>Quick import:</span>
+          {[
+            { label:'🟡 Zerodha',    broker:'zerodha' },
+            { label:'🟢 Groww',      broker:'groww' },
+            { label:'🔵 MF Central', broker:'mfcentral' },
+            { label:'🟣 Kuvera',     broker:'kuvera' },
+            { label:'🏛️ NSDL/CDSL',  broker:'nsdl' },
+            { label:'🏦 Bank',       broker:'bank' },
+          ].map(q => (
+            <button key={q.broker}
+              onClick={() => setImportModal(true)}
+              style={{
+                background:'#0d1117', border:'1px solid #1a1f2e', borderRadius:20,
+                padding:'4px 12px', fontSize:12, color:'#a0aac0', cursor:'pointer',
+                transition:'all 0.2s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor='#c8953a'; e.currentTarget.style.color='#e2e4ec' }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor='#1a1f2e'; e.currentTarget.style.color='#a0aac0' }}>
+              {q.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Asset groups */}
       {Object.entries(groups).map(([cat, items]) => {
         const catTotal = items.reduce((s, x) => s + x.value, 0)
         return (
-          <div key={cat} className="card" style={{ marginBottom: 16, overflow: 'hidden' }}>
-            <div style={{ padding: '14px 20px', borderBottom: '1px solid #1a1f2e', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0a0d13' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div key={cat} className="card" style={{ marginBottom:16, overflow:'hidden' }}>
+            <div style={{ padding:'14px 20px', borderBottom:'1px solid #1a1f2e', display:'flex', justifyContent:'space-between', alignItems:'center', background:'#0a0d13' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
                 <span className="tag tag-asset">{cat}</span>
-                <span style={{ fontSize: 12, color: '#6b7494' }}>{items.length} holding{items.length !== 1 ? 's' : ''}</span>
+                <span style={{ fontSize:12, color:'#6b7494' }}>{items.length} holding{items.length !== 1 ? 's' : ''}</span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                <span style={{ fontSize: 12, color: '#6b7494' }}>{totalAssets > 0 ? ((catTotal / totalAssets) * 100).toFixed(1) : 0}%</span>
-                <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 14, color: '#3ecf8e' }}>{fmt(catTotal)}</span>
+              <div style={{ display:'flex', alignItems:'center', gap:16 }}>
+                <span style={{ fontSize:12, color:'#6b7494' }}>{totalAssets > 0 ? ((catTotal/totalAssets)*100).toFixed(1) : 0}%</span>
+                <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:14, color:'#3ecf8e' }}>{fmt(catTotal)}</span>
               </div>
             </div>
             <DataTable currency={cur}
               cols={[
-                { key: 'name',        label: 'Name' },
-                { key: 'institution', label: 'Institution', color: () => '#6b7494' },
-                { key: 'value',       label: 'Value', right: true, mono: true,
-                  render: (r, c) => <span style={{ color: '#e8c060' }}>{formatCurrency(r.value, c)}</span> },
-                { key: 'alloc', label: 'Allocation', right: true,
+                { key:'name', label:'Name' },
+                { key:'institution', label:'Source',
                   render: r => (
-                    <div style={{ minWidth: 80 }}>
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 3 }}>
-                        <span style={{ fontSize: 11, fontFamily: "'JetBrains Mono',monospace", color: '#6b7494' }}>
-                          {totalAssets > 0 ? ((r.value / totalAssets) * 100).toFixed(1) : 0}%
+                    <span style={{ color:'#6b7494', fontSize:12 }}>
+                      {r.institution ? `${BROKER_ICONS[r.institution] || ''}  ${r.institution}` : '—'}
+                    </span>
+                  )},
+                { key:'value', label:'Value', right:true, mono:true,
+                  render:(r,c) => <span style={{ color:'#e8c060' }}>{formatCurrency(r.value, c)}</span> },
+                { key:'alloc', label:'Allocation', right:true,
+                  render: r => (
+                    <div style={{ minWidth:80 }}>
+                      <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:3 }}>
+                        <span style={{ fontSize:11, fontFamily:"'JetBrains Mono',monospace", color:'#6b7494' }}>
+                          {totalAssets > 0 ? ((r.value/totalAssets)*100).toFixed(1) : 0}%
                         </span>
                       </div>
-                      <ProgressBar pct={totalAssets > 0 ? (r.value / totalAssets) * 100 : 0} color="#c8953a" height={3} />
+                      <ProgressBar pct={totalAssets > 0 ? (r.value/totalAssets)*100 : 0} color="#c8953a" height={3} />
                     </div>
                   )},
-                { key: 'note', label: 'Note', color: () => '#6b7494' },
+                { key:'note', label:'Note', color:() => '#6b7494' },
               ]}
               rows={items}
-              onEdit={item  => setModal({ collection: 'assets', item })}
-              onDelete={id  => deleteItem('assets', id)}
+              onEdit={item => setModal({ collection:'assets', item })}
+              onDelete={id => deleteItem('assets', id)}
             />
           </div>
         )
       })}
 
+      {/* Modals */}
       {modal && <EntryModal collection={modal.collection} item={modal.item} onClose={() => setModal(null)} />}
+      {importModal && (
+        <ImportModal
+          onClose={() => setImportModal(false)}
+          onImported={(count) => {
+            setImportModal(false)
+            setImportToast(count)
+            setTimeout(() => setImportToast(null), 3500)
+          }}
+        />
+      )}
+      {importToast && (
+        <div style={{
+          position:'fixed', bottom:24, right:24, zIndex:9999,
+          background:'#0d1117', border:'1px solid #3ecf8e',
+          borderRadius:10, padding:'14px 20px', fontSize:13, color:'#e2e4ec',
+          display:'flex', alignItems:'center', gap:10,
+          boxShadow:'0 20px 40px rgba(0,0,0,0.5)',
+          animation:'notifSlide 0.3s ease',
+        }}>
+          <span style={{ color:'#3ecf8e', fontSize:18 }}>✓</span>
+          Successfully imported <strong style={{ color:'#3ecf8e' }}>{importToast} assets</strong>
+        </div>
+      )}
     </div>
   )
 }
