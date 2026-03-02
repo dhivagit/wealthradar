@@ -61,9 +61,9 @@ export function Dashboard() {
                 <stop offset="95%" stopColor="#3ecf8e" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1a1f2e" />
-            <XAxis dataKey="month" tick={{ fill: '#6b7494', fontSize: 11 }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fill: '#6b7494', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => fmt(v)} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#eef0f8" />
+            <XAxis dataKey="month" tick={{ fill: '#9098b8', fontSize: 11 }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fill: '#9098b8', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => fmt(v)} />
             <Tooltip content={<ChartTooltip currency={cur} />} />
             <Legend wrapperStyle={{ fontSize: 12, color: '#8892b0' }} />
             <Area type="monotone" dataKey="assets"   stroke="#3ecf8e" strokeWidth={1.5} fill="url(#assetGrad)" name="Assets"    dot={false} />
@@ -84,9 +84,9 @@ export function Dashboard() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <div style={{ width: 7, height: 7, borderRadius: '50%', background: s.color, flexShrink: 0 }} />
-                      <span style={{ fontSize: 12, color: '#a0aac0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 110 }}>{s.name}</span>
+                      <span style={{ fontSize: 12, color: '#4a4f6a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 110 }}>{s.name}</span>
                     </div>
-                    <span style={{ fontSize: 11, fontFamily: "'JetBrains Mono',monospace", color: '#e2e4ec' }}>
+                    <span style={{ fontSize: 11, fontFamily: "'JetBrains Mono',monospace", color: '#1a1d2e' }}>
                       {totalAssets > 0 ? ((s.value / totalAssets) * 100).toFixed(1) : 0}%
                     </span>
                   </div>
@@ -101,9 +101,9 @@ export function Dashboard() {
           <h3 className="section-heading" style={{ marginBottom: 20 }}>Income vs Expenses (6M)</h3>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={data.history.slice(-6)} barGap={4}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1a1f2e" />
-              <XAxis dataKey="month" tick={{ fill: '#6b7494', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#6b7494', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => fmt(v)} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#eef0f8" />
+              <XAxis dataKey="month" tick={{ fill: '#9098b8', fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: '#9098b8', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => fmt(v)} />
               <Tooltip content={<ChartTooltip currency={cur} />} />
               <Bar dataKey="income"   fill="#3ecf8e" opacity={0.8} radius={[3,3,0,0]} name="Income" />
               <Bar dataKey="expenses" fill="#f06a6a" opacity={0.8} radius={[3,3,0,0]} name="Expenses" />
@@ -118,12 +118,12 @@ export function Dashboard() {
           <h3 className="section-heading" style={{ marginBottom: 16 }}>Saved Snapshots</h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 12 }}>
             {[...data.snapshots].reverse().slice(0, 6).map(snap => (
-              <div key={snap.id} style={{ padding: '14px 16px', background: '#06070a', borderRadius: 10, border: '1px solid #1a1f2e' }}>
-                <div style={{ fontSize: 11, color: '#6b7494', marginBottom: 6 }}>{snap.date}</div>
-                <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, color: '#e8c060', marginBottom: 4 }}>
+              <div key={snap.id} style={{ padding: '14px 16px', background: '#f5f6fa', borderRadius: 10, border: '1px solid #e8eaf0' }}>
+                <div style={{ fontSize: 11, color: '#8892b0', marginBottom: 6 }}>{snap.date}</div>
+                <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, color: '#b8820e', marginBottom: 4 }}>
                   {formatCompact(snap.netWorth, snap.currency || 'INR')}
                 </div>
-                <div style={{ fontSize: 11, color: '#3d4460' }}>Net Worth</div>
+                <div style={{ fontSize: 11, color: '#b0b8d0' }}>Net Worth</div>
               </div>
             ))}
           </div>
@@ -158,15 +158,15 @@ export function Assets() {
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:24, flexWrap:'wrap', gap:12 }}>
         <div>
           <h2 className="section-heading">Assets</h2>
-          <p style={{ color:'#6b7494', fontSize:13, marginTop:4 }}>
-            Total: <span style={{ color:'#3ecf8e', fontFamily:"'JetBrains Mono',monospace" }}>{fmt(totalAssets)}</span>
-            <span style={{ color:'#3d4460', marginLeft:12 }}>{data?.assets?.length || 0} holdings</span>
+          <p style={{ color:'#8892b0', fontSize:13, marginTop:4 }}>
+            Total: <span style={{ color:'#16a34a', fontFamily:"'JetBrains Mono',monospace" }}>{fmt(totalAssets)}</span>
+            <span style={{ color:'#b0b8d0', marginLeft:12 }}>{data?.assets?.length || 0} holdings</span>
           </p>
         </div>
         <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
           <button className="btn btn-outline"
             onClick={() => setImportModal(true)}
-            style={{ color:'#c8953a', borderColor:'rgba(200,149,58,0.35)', gap:8 }}>
+            style={{ color:'#c8953a', borderColor:'rgba(200,146,10,0.35)', gap:8 }}>
             📥 Import from Broker / Bank
           </button>
           <button className="btn btn-gold" onClick={() => setModal({ collection:'assets', item:null })}>
@@ -179,20 +179,20 @@ export function Assets() {
       {(!data?.assets || data.assets.length === 0) && (
         <div style={{
           marginBottom:20, padding:'24px 28px',
-          background:'linear-gradient(135deg,rgba(200,149,58,0.06),rgba(62,207,142,0.04))',
-          border:'1px dashed rgba(200,149,58,0.3)', borderRadius:14,
+          background:'linear-gradient(135deg,rgba(200,146,10,0.05),rgba(22,163,74,0.03))',
+          border:'1px dashed rgba(200,146,10,0.3)', borderRadius:14,
           textAlign:'center',
         }}>
           <div style={{ fontSize:36, marginBottom:12 }}>📊</div>
-          <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:20, color:'#e2e4ec', marginBottom:8 }}>
+          <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:20, color:'#1a1d2e', marginBottom:8 }}>
             Import your existing portfolio
           </div>
-          <div style={{ fontSize:13, color:'#6b7494', marginBottom:20, maxWidth:440, margin:'0 auto 20px' }}>
+          <div style={{ fontSize:13, color:'#8892b0', marginBottom:20, maxWidth:440, margin:'0 auto 20px' }}>
             Connect holdings from Zerodha, Groww, MF Central, CAMS, EPFO, your bank and more — in one click.
           </div>
           <div style={{ display:'flex', justifyContent:'center', gap:10, flexWrap:'wrap', marginBottom:20 }}>
             {['🟡 Zerodha','🟢 Groww','🔵 MF Central','🟣 Kuvera','🏛️ NSDL/CDSL','🏦 Banks'].map(b => (
-              <div key={b} style={{ padding:'5px 12px', background:'#0d1117', border:'1px solid #1a1f2e', borderRadius:20, fontSize:12, color:'#a0aac0' }}>
+              <div key={b} style={{ padding:'5px 12px', background:'#ffffff', border:'1px solid #e8eaf0', borderRadius:20, fontSize:12, color:'#4a4f6a' }}>
                 {b}
               </div>
             ))}
@@ -207,7 +207,7 @@ export function Assets() {
       {/* Quick-import chips per category */}
       {data?.assets?.length > 0 && (
         <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:20 }}>
-          <span style={{ fontSize:12, color:'#6b7494', alignSelf:'center', marginRight:4 }}>Quick import:</span>
+          <span style={{ fontSize:12, color:'#8892b0', alignSelf:'center', marginRight:4 }}>Quick import:</span>
           {[
             { label:'🟡 Zerodha',    broker:'zerodha' },
             { label:'🟢 Groww',      broker:'groww' },
@@ -219,8 +219,8 @@ export function Assets() {
             <button key={q.broker}
               onClick={() => setImportModal(true)}
               style={{
-                background:'#0d1117', border:'1px solid #1a1f2e', borderRadius:20,
-                padding:'4px 12px', fontSize:12, color:'#a0aac0', cursor:'pointer',
+                background:'#ffffff', border:'1px solid #e8eaf0', borderRadius:20,
+                padding:'4px 12px', fontSize:12, color:'#4a4f6a', cursor:'pointer',
                 transition:'all 0.2s',
               }}
               onMouseEnter={e => { e.currentTarget.style.borderColor='#c8953a'; e.currentTarget.style.color='#e2e4ec' }}
@@ -236,14 +236,14 @@ export function Assets() {
         const catTotal = items.reduce((s, x) => s + x.value, 0)
         return (
           <div key={cat} className="card" style={{ marginBottom:16, overflow:'hidden' }}>
-            <div style={{ padding:'14px 20px', borderBottom:'1px solid #1a1f2e', display:'flex', justifyContent:'space-between', alignItems:'center', background:'#0a0d13' }}>
+            <div style={{ padding:'14px 20px', borderBottom:'1px solid #eef0f8', display:'flex', justifyContent:'space-between', alignItems:'center', background:'#f8f9fc' }}>
               <div style={{ display:'flex', alignItems:'center', gap:10 }}>
                 <span className="tag tag-asset">{cat}</span>
-                <span style={{ fontSize:12, color:'#6b7494' }}>{items.length} holding{items.length !== 1 ? 's' : ''}</span>
+                <span style={{ fontSize:12, color:'#8892b0' }}>{items.length} holding{items.length !== 1 ? 's' : ''}</span>
               </div>
               <div style={{ display:'flex', alignItems:'center', gap:16 }}>
-                <span style={{ fontSize:12, color:'#6b7494' }}>{totalAssets > 0 ? ((catTotal/totalAssets)*100).toFixed(1) : 0}%</span>
-                <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:14, color:'#3ecf8e' }}>{fmt(catTotal)}</span>
+                <span style={{ fontSize:12, color:'#8892b0' }}>{totalAssets > 0 ? ((catTotal/totalAssets)*100).toFixed(1) : 0}%</span>
+                <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:14, color:'#16a34a' }}>{fmt(catTotal)}</span>
               </div>
             </div>
             <DataTable currency={cur}
@@ -251,7 +251,7 @@ export function Assets() {
                 { key:'name', label:'Name' },
                 { key:'institution', label:'Source',
                   render: r => (
-                    <span style={{ color:'#6b7494', fontSize:12 }}>
+                    <span style={{ color:'#8892b0', fontSize:12 }}>
                       {r.institution ? `${BROKER_ICONS[r.institution] || ''}  ${r.institution}` : '—'}
                     </span>
                   )},
@@ -261,7 +261,7 @@ export function Assets() {
                   render: r => (
                     <div style={{ minWidth:80 }}>
                       <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:3 }}>
-                        <span style={{ fontSize:11, fontFamily:"'JetBrains Mono',monospace", color:'#6b7494' }}>
+                        <span style={{ fontSize:11, fontFamily:"'JetBrains Mono',monospace", color:'#8892b0' }}>
                           {totalAssets > 0 ? ((r.value/totalAssets)*100).toFixed(1) : 0}%
                         </span>
                       </div>
@@ -293,14 +293,14 @@ export function Assets() {
       {importToast && (
         <div style={{
           position:'fixed', bottom:24, right:24, zIndex:9999,
-          background:'#0d1117', border:'1px solid #3ecf8e',
-          borderRadius:10, padding:'14px 20px', fontSize:13, color:'#e2e4ec',
+          background:'#ffffff', border:'1px solid #16a34a',
+          borderRadius:10, padding:'14px 20px', fontSize:13, color:'#1a1d2e',
           display:'flex', alignItems:'center', gap:10,
           boxShadow:'0 20px 40px rgba(0,0,0,0.5)',
           animation:'notifSlide 0.3s ease',
         }}>
-          <span style={{ color:'#3ecf8e', fontSize:18 }}>✓</span>
-          Successfully imported <strong style={{ color:'#3ecf8e' }}>{importToast} assets</strong>
+          <span style={{ color:'#16a34a', fontSize:18 }}>✓</span>
+          Successfully imported <strong style={{ color:'#16a34a' }}>{importToast} assets</strong>
         </div>
       )}
     </div>
@@ -323,8 +323,8 @@ export function Liabilities() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h2 className="section-heading">Liabilities</h2>
-          <p style={{ color: '#6b7494', fontSize: 13, marginTop: 4 }}>
-            Total: <span style={{ color: '#f06a6a', fontFamily: "'JetBrains Mono',monospace" }}>{fmt(totalLiabilities)}</span>
+          <p style={{ color: '#8892b0', fontSize: 13, marginTop: 4 }}>
+            Total: <span style={{ color: '#dc2626', fontFamily: "'JetBrains Mono',monospace" }}>{fmt(totalLiabilities)}</span>
           </p>
         </div>
         <button className="btn btn-gold" onClick={() => setModal({ collection: 'liabilities', item: null })}>+ Add Liability</button>
@@ -332,9 +332,9 @@ export function Liabilities() {
 
       {Object.entries(groups).map(([cat, items]) => (
         <div key={cat} className="card" style={{ marginBottom: 16, overflow: 'hidden' }}>
-          <div style={{ padding: '14px 20px', borderBottom: '1px solid #1a1f2e', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0a0d13' }}>
+          <div style={{ padding: '14px 20px', borderBottom: '1px solid #eef0f8', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8f9fc' }}>
             <span className="tag tag-liability">{cat}</span>
-            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 14, color: '#f06a6a' }}>
+            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 14, color: '#dc2626' }}>
               {fmt(items.reduce((s, x) => s + x.value, 0))}
             </span>
           </div>
@@ -344,10 +344,10 @@ export function Liabilities() {
               { key: 'institution', label: 'Lender', color: () => '#6b7494' },
               { key: 'rate',        label: 'Rate', right: true,
                 render: r => r.rate
-                  ? <span style={{ fontFamily: "'JetBrains Mono',monospace", color: '#f06a6a', fontSize: 12 }}>{r.rate}% p.a.</span>
-                  : <span style={{ color: '#3d4460' }}>—</span> },
+                  ? <span style={{ fontFamily: "'JetBrains Mono',monospace", color: '#dc2626', fontSize: 12 }}>{r.rate}% p.a.</span>
+                  : <span style={{ color: '#b0b8d0' }}>—</span> },
               { key: 'value', label: 'Outstanding', right: true, mono: true,
-                render: (r, c) => <span style={{ color: '#f06a6a' }}>{formatCurrency(r.value, c)}</span> },
+                render: (r, c) => <span style={{ color: '#dc2626' }}>{formatCurrency(r.value, c)}</span> },
               { key: 'note', label: 'Note', color: () => '#6b7494' },
             ]}
             rows={items}
@@ -405,21 +405,21 @@ export function CashFlow() {
           <h3 className="section-heading" style={{ marginBottom: 20 }}>Flow Summary</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 8 }}>
             {[
-              { label: 'Income',   value: totalIncome,   pct: 100,                                    color: '#3ecf8e' },
-              { label: 'Expenses', value: totalExpenses, pct: totalIncome > 0 ? (totalExpenses / totalIncome) * 100 : 0, color: '#f06a6a' },
-              { label: 'Savings',  value: cashFlow,      pct: Math.max(savingsRate, 0),               color: '#5b8ff9' },
+              { label: 'Income',   value: totalIncome,   pct: 100,                                    color: '#16a34a' },
+              { label: 'Expenses', value: totalExpenses, pct: totalIncome > 0 ? (totalExpenses / totalIncome) * 100 : 0, color: '#dc2626' },
+              { label: 'Savings',  value: cashFlow,      pct: Math.max(savingsRate, 0),               color: '#2563eb' },
             ].map(row => (
               <div key={row.label}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <span style={{ fontSize: 13, color: '#a0aac0' }}>{row.label}</span>
+                  <span style={{ fontSize: 13, color: '#4a4f6a' }}>{row.label}</span>
                   <span style={{ fontFamily: "'JetBrains Mono',monospace", color: row.color, fontSize: 14 }}>{fmt(row.value)}</span>
                 </div>
                 <ProgressBar pct={row.pct} color={row.color} height={8} />
               </div>
             ))}
-            <div style={{ paddingTop: 8, borderTop: '1px solid #1a1f2e', fontSize: 12, color: '#6b7494' }}>
+            <div style={{ paddingTop: 8, borderTop: '1px solid #eef0f8', fontSize: 12, color: '#8892b0' }}>
               Savings Rate: <span style={{ color: savingsRate >= 20 ? '#3ecf8e' : '#f09b46', fontFamily: "'JetBrains Mono',monospace" }}>{savingsRate?.toFixed(1)}%</span>
-              <span style={{ marginLeft: 8, color: '#3d4460' }}>(benchmark ≥ 20%)</span>
+              <span style={{ marginLeft: 8, color: '#b0b8d0' }}>(benchmark ≥ 20%)</span>
             </div>
           </div>
         </div>
@@ -427,7 +427,7 @@ export function CashFlow() {
 
       {/* Income Table */}
       <div className="card" style={{ overflow: 'hidden' }}>
-        <div style={{ padding: '14px 20px', borderBottom: '1px solid #1a1f2e', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0a0d13' }}>
+        <div style={{ padding: '14px 20px', borderBottom: '1px solid #eef0f8', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8f9fc' }}>
           <span className="tag tag-income">Income Streams</span>
           <button className="btn btn-gold btn-sm" onClick={() => setModal({ collection: 'income', item: null })}>+ Add</button>
         </div>
@@ -436,24 +436,24 @@ export function CashFlow() {
             { key: 'name',     label: 'Source' },
             { key: 'category', label: 'Category', color: () => '#6b7494' },
             { key: 'monthly',  label: 'Monthly', right: true,
-              render: (r, c) => <span style={{ fontFamily: "'JetBrains Mono',monospace", color: '#3ecf8e' }}>{formatCurrency(r.monthly, c)}</span> },
+              render: (r, c) => <span style={{ fontFamily: "'JetBrains Mono',monospace", color: '#16a34a' }}>{formatCurrency(r.monthly, c)}</span> },
             { key: 'annual', label: 'Annual', right: true,
-              render: (r, c) => <span style={{ fontFamily: "'JetBrains Mono',monospace", color: '#6b7494' }}>{formatCurrency(r.monthly * 12, c)}</span> },
+              render: (r, c) => <span style={{ fontFamily: "'JetBrains Mono',monospace", color: '#8892b0' }}>{formatCurrency(r.monthly * 12, c)}</span> },
             { key: 'note', label: 'Note', color: () => '#6b7494' },
           ]}
           rows={data?.income || []}
           onEdit={item => setModal({ collection: 'income', item })}
           onDelete={id  => deleteItem('income', id)}
         />
-        <div style={{ padding: '12px 16px', borderTop: '1px solid #1a1f2e', textAlign: 'right', fontSize: 13 }}>
-          <span style={{ color: '#6b7494' }}>Total: </span>
-          <span style={{ fontFamily: "'JetBrains Mono',monospace", color: '#3ecf8e', marginLeft: 8 }}>{fmt(totalIncome)}/mo</span>
+        <div style={{ padding: '12px 16px', borderTop: '1px solid #eef0f8', textAlign: 'right', fontSize: 13 }}>
+          <span style={{ color: '#8892b0' }}>Total: </span>
+          <span style={{ fontFamily: "'JetBrains Mono',monospace", color: '#16a34a', marginLeft: 8 }}>{fmt(totalIncome)}/mo</span>
         </div>
       </div>
 
       {/* Expenses Table */}
       <div className="card" style={{ overflow: 'hidden' }}>
-        <div style={{ padding: '14px 20px', borderBottom: '1px solid #1a1f2e', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0a0d13' }}>
+        <div style={{ padding: '14px 20px', borderBottom: '1px solid #eef0f8', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8f9fc' }}>
           <span className="tag tag-expense">Expense Categories</span>
           <button className="btn btn-gold btn-sm" onClick={() => setModal({ collection: 'expenses', item: null })}>+ Add</button>
         </div>
@@ -462,20 +462,20 @@ export function CashFlow() {
             { key: 'name',     label: 'Expense' },
             { key: 'category', label: 'Category', color: () => '#6b7494' },
             { key: 'monthly',  label: 'Monthly', right: true,
-              render: (r, c) => <span style={{ fontFamily: "'JetBrains Mono',monospace", color: '#f09b46' }}>-{formatCurrency(r.monthly, c)}</span> },
+              render: (r, c) => <span style={{ fontFamily: "'JetBrains Mono',monospace", color: '#d97706' }}>-{formatCurrency(r.monthly, c)}</span> },
             { key: 'annual', label: 'Annual', right: true,
-              render: (r, c) => <span style={{ fontFamily: "'JetBrains Mono',monospace", color: '#6b7494' }}>-{formatCurrency(r.monthly * 12, c)}</span> },
+              render: (r, c) => <span style={{ fontFamily: "'JetBrains Mono',monospace", color: '#8892b0' }}>-{formatCurrency(r.monthly * 12, c)}</span> },
             { key: 'pct', label: '% of Income', right: true,
-              render: r => <span style={{ fontSize: 11, color: '#6b7494' }}>{totalIncome > 0 ? ((r.monthly / totalIncome) * 100).toFixed(1) : 0}%</span> },
+              render: r => <span style={{ fontSize: 11, color: '#8892b0' }}>{totalIncome > 0 ? ((r.monthly / totalIncome) * 100).toFixed(1) : 0}%</span> },
             { key: 'note', label: 'Note', color: () => '#6b7494' },
           ]}
           rows={data?.expenses || []}
           onEdit={item => setModal({ collection: 'expenses', item })}
           onDelete={id  => deleteItem('expenses', id)}
         />
-        <div style={{ padding: '12px 16px', borderTop: '1px solid #1a1f2e', textAlign: 'right', fontSize: 13 }}>
-          <span style={{ color: '#6b7494' }}>Total: </span>
-          <span style={{ fontFamily: "'JetBrains Mono',monospace", color: '#f06a6a', marginLeft: 8 }}>-{fmt(totalExpenses)}/mo</span>
+        <div style={{ padding: '12px 16px', borderTop: '1px solid #eef0f8', textAlign: 'right', fontSize: 13 }}>
+          <span style={{ color: '#8892b0' }}>Total: </span>
+          <span style={{ fontFamily: "'JetBrains Mono',monospace", color: '#dc2626', marginLeft: 8 }}>-{fmt(totalExpenses)}/mo</span>
         </div>
       </div>
 
@@ -501,10 +501,10 @@ export function Analytics() {
   }))
 
   const healthMetrics = [
-    { label: 'Savings Rate',     value: `${savingsRate?.toFixed(1)}%`,     pct: Math.min(savingsRate, 100),  color: '#3ecf8e', good: savingsRate >= 20,    bench: '≥ 20%' },
-    { label: 'Debt-to-Asset',    value: `${debtRatio?.toFixed(1)}%`,       pct: 100 - debtRatio,             color: '#f06a6a', good: debtRatio < 50,       bench: '< 50%' },
-    { label: 'FI Progress',      value: `${fiPct?.toFixed(1)}%`,           pct: fiPct,                       color: '#5b8ff9', good: fiPct >= 100,          bench: '100% = FI' },
-    { label: 'Emergency Fund',   value: `${emergencyMonths?.toFixed(1)}mo`, pct: Math.min(emergencyMonths / 6 * 100, 100), color: '#e8c060', good: emergencyMonths >= 6, bench: '≥ 6 months' },
+    { label: 'Savings Rate',     value: `${savingsRate?.toFixed(1)}%`,     pct: Math.min(savingsRate, 100),  color: '#16a34a', good: savingsRate >= 20,    bench: '≥ 20%' },
+    { label: 'Debt-to-Asset',    value: `${debtRatio?.toFixed(1)}%`,       pct: 100 - debtRatio,             color: '#dc2626', good: debtRatio < 50,       bench: '< 50%' },
+    { label: 'FI Progress',      value: `${fiPct?.toFixed(1)}%`,           pct: fiPct,                       color: '#2563eb', good: fiPct >= 100,          bench: '100% = FI' },
+    { label: 'Emergency Fund',   value: `${emergencyMonths?.toFixed(1)}mo`, pct: Math.min(emergencyMonths / 6 * 100, 100), color: '#b8820e', good: emergencyMonths >= 6, bench: '≥ 6 months' },
   ]
 
   return (
@@ -521,9 +521,9 @@ export function Analytics() {
         <h3 className="section-heading" style={{ marginBottom: 20 }}>Assets vs Liabilities (12M)</h3>
         <ResponsiveContainer width="100%" height={240}>
           <LineChart data={data?.history || []}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1a1f2e" />
-            <XAxis dataKey="month" tick={{ fill: '#6b7494', fontSize: 11 }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fill: '#6b7494', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => fmts(v)} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#eef0f8" />
+            <XAxis dataKey="month" tick={{ fill: '#9098b8', fontSize: 11 }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fill: '#9098b8', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => fmts(v)} />
             <Tooltip content={<ChartTooltip currency={cur} />} />
             <Legend wrapperStyle={{ fontSize: 12, color: '#8892b0' }} />
             <Line type="monotone" dataKey="assets"      stroke="#3ecf8e" strokeWidth={2}   dot={false} name="Assets" />
@@ -556,11 +556,11 @@ export function Analytics() {
                 <div style={{ width: 6, height: 6, borderRadius: '50%', background: m.good ? '#3ecf8e' : '#f06a6a', flexShrink: 0 }} />
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-                    <span style={{ fontSize: 12, color: '#a0aac0' }}>{m.label}</span>
+                    <span style={{ fontSize: 12, color: '#4a4f6a' }}>{m.label}</span>
                     <span style={{ fontSize: 12, fontFamily: "'JetBrains Mono',monospace", color: m.good ? '#3ecf8e' : '#f06a6a' }}>{m.value}</span>
                   </div>
                   <ProgressBar pct={m.pct} color={m.color} height={4} />
-                  <span style={{ fontSize: 10, color: '#3d4460', marginTop: 2, display: 'block' }}>Benchmark: {m.bench}</span>
+                  <span style={{ fontSize: 10, color: '#b0b8d0', marginTop: 2, display: 'block' }}>Benchmark: {m.bench}</span>
                 </div>
               </div>
             ))}
@@ -574,11 +574,11 @@ export function Analytics() {
           <h3 className="section-heading" style={{ marginBottom: 16 }}>Top Asset Holdings</h3>
           {[...( data?.assets || [])].sort((a, b) => b.value - a.value).slice(0, 6).map((a, i) => (
             <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
-              <span style={{ fontSize: 11, fontFamily: "'JetBrains Mono',monospace", color: '#3d4460', width: 22 }}>#{i + 1}</span>
+              <span style={{ fontSize: 11, fontFamily: "'JetBrains Mono',monospace", color: '#b0b8d0', width: 22 }}>#{i + 1}</span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span style={{ fontSize: 12, color: '#a0aac0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>{a.name}</span>
-                  <span style={{ fontSize: 12, fontFamily: "'JetBrains Mono',monospace", color: '#e8c060', flexShrink: 0, marginLeft: 8 }}>{fmts(a.value)}</span>
+                  <span style={{ fontSize: 12, color: '#4a4f6a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>{a.name}</span>
+                  <span style={{ fontSize: 12, fontFamily: "'JetBrains Mono',monospace", color: '#b8820e', flexShrink: 0, marginLeft: 8 }}>{fmts(a.value)}</span>
                 </div>
                 <ProgressBar pct={totalAssets > 0 ? (a.value / totalAssets) * 100 : 0} color={PALETTE[i]} height={3} />
               </div>
@@ -589,19 +589,19 @@ export function Analytics() {
         <div className="card" style={{ padding: 24 }}>
           <h3 className="section-heading" style={{ marginBottom: 16 }}>High-Interest Debts ⚠</h3>
           {[...(data?.liabilities || [])].filter(l => l.rate).sort((a, b) => (b.rate || 0) - (a.rate || 0)).map(l => (
-            <div key={l.id} style={{ padding: '12px 14px', background: '#06070a', borderRadius: 8, marginBottom: 10, border: `1px solid ${l.rate > 24 ? 'rgba(240,106,106,0.3)' : '#1a1f2e'}` }}>
+            <div key={l.id} style={{ padding: '12px 14px', background: '#f5f6fa', borderRadius: 8, marginBottom: 10, border: `1px solid ${l.rate > 24 ? 'rgba(220,38,38,0.25)' : '#e8eaf0'}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                <span style={{ fontSize: 13, color: '#e2e4ec' }}>{l.name}</span>
+                <span style={{ fontSize: 13, color: '#1a1d2e' }}>{l.name}</span>
                 <span style={{ fontSize: 13, fontFamily: "'JetBrains Mono',monospace", color: l.rate > 24 ? '#f06a6a' : '#f09b46' }}>{l.rate}%</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 11, color: '#6b7494' }}>Monthly interest: {fmt((l.value * l.rate / 100) / 12)}</span>
-                <span style={{ fontSize: 11, color: '#6b7494' }}>Balance: {fmts(l.value)}</span>
+                <span style={{ fontSize: 11, color: '#8892b0' }}>Monthly interest: {fmt((l.value * l.rate / 100) / 12)}</span>
+                <span style={{ fontSize: 11, color: '#8892b0' }}>Balance: {fmts(l.value)}</span>
               </div>
             </div>
           ))}
           {!(data?.liabilities || []).some(l => l.rate) && (
-            <div style={{ color: '#3d4460', fontSize: 13, textAlign: 'center', padding: 20 }}>No interest-bearing debts 🎉</div>
+            <div style={{ color: '#b0b8d0', fontSize: 13, textAlign: 'center', padding: 20 }}>No interest-bearing debts 🎉</div>
           )}
         </div>
       </div>
@@ -627,22 +627,22 @@ export function NetWorth() {
   return (
     <div style={{ display: 'grid', gap: 20 }}>
       {/* Hero */}
-      <div className="card" style={{ padding: '40px 32px', textAlign: 'center', background: 'linear-gradient(135deg,#0d1117,#111827)', position: 'relative', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at 50% 50%, rgba(200,149,58,0.06) 0%, transparent 70%)' }} />
+      <div className="card" style={{ padding: '40px 32px', textAlign: 'center', background: 'linear-gradient(135deg,#f8f9fd,#eef1f8)', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at 50% 50%, rgba(200,146,10,0.06) 0%, transparent 70%)' }} />
         <div style={{ position: 'relative' }}>
-          <div style={{ fontSize: 11, color: '#6b7494', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 14 }}>Current Net Worth</div>
+          <div style={{ fontSize: 11, color: '#8892b0', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 14 }}>Current Net Worth</div>
           <div className="gold-gradient" style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 60, fontWeight: 700, lineHeight: 1, marginBottom: 16 }}>
             {fmt(netWorth)}
           </div>
           <div style={{ display: 'flex', justifyContent: 'center', gap: 36, marginTop: 20, flexWrap: 'wrap' }}>
             {[
-              { label: 'Assets',       value: fmt(totalAssets),      color: '#3ecf8e' },
-              { label: 'Liabilities',  value: `-${fmt(totalLiabilities)}`, color: '#f06a6a' },
+              { label: 'Assets',       value: fmt(totalAssets),      color: '#16a34a' },
+              { label: 'Liabilities',  value: `-${fmt(totalLiabilities)}`, color: '#dc2626' },
               { label: 'Debt Ratio',   value: `${debtRatio?.toFixed(1)}%`, color: debtRatio > 50 ? '#f06a6a' : '#e8c060' },
               { label: 'Annual Flow',  value: fmt(cashFlow * 12),    color: cashFlow >= 0 ? '#5b8ff9' : '#f06a6a' },
             ].map(i => (
               <div key={i.label} style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 10, color: '#6b7494', marginBottom: 6, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{i.label}</div>
+                <div style={{ fontSize: 10, color: '#8892b0', marginBottom: 6, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{i.label}</div>
                 <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 15, color: i.color }}>{i.value}</div>
               </div>
             ))}
@@ -656,19 +656,19 @@ export function NetWorth() {
           <h3 className="section-heading" style={{ marginBottom: 20 }}>Wealth Milestone</h3>
           <div style={{ marginBottom: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span style={{ fontSize: 13, color: '#a0aac0' }}>Progress to {fmts(nextM)}</span>
-              <span style={{ fontSize: 13, fontFamily: "'JetBrains Mono',monospace", color: '#e8c060' }}>{Math.max(mPct, 0).toFixed(1)}%</span>
+              <span style={{ fontSize: 13, color: '#4a4f6a' }}>Progress to {fmts(nextM)}</span>
+              <span style={{ fontSize: 13, fontFamily: "'JetBrains Mono',monospace", color: '#b8820e' }}>{Math.max(mPct, 0).toFixed(1)}%</span>
             </div>
             <ProgressBar pct={Math.max(mPct, 0)} color="#c8953a" height={10} />
           </div>
-          <div style={{ padding: '12px 14px', background: '#06070a', borderRadius: 8, marginBottom: 16 }}>
-            <div style={{ fontSize: 11, color: '#6b7494', marginBottom: 4 }}>Remaining</div>
-            <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 22, color: '#e8c060' }}>{fmts(Math.max(nextM - netWorth, 0))}</div>
+          <div style={{ padding: '12px 14px', background: '#f5f6fa', borderRadius: 8, marginBottom: 16 }}>
+            <div style={{ fontSize: 11, color: '#8892b0', marginBottom: 4 }}>Remaining</div>
+            <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 22, color: '#b8820e' }}>{fmts(Math.max(nextM - netWorth, 0))}</div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             {MILESTONES.slice(0, 6).map(m => (
               <div key={m} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div style={{ width: 8, height: 8, borderRadius: '50%', background: netWorth >= m ? '#3ecf8e' : '#1a1f2e', border: `1px solid ${netWorth >= m ? '#3ecf8e' : '#252d42'}`, flexShrink: 0 }} />
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: netWorth >= m ? '#16a34a' : '#e8eaf0', border: `1px solid ${netWorth >= m ? '#3ecf8e' : '#d0d3e0'}`, flexShrink: 0 }} />
                 <span style={{ fontSize: 11, color: netWorth >= m ? '#3ecf8e' : '#6b7494', fontFamily: "'JetBrains Mono',monospace" }}>{fmts(m)}</span>
               </div>
             ))}
@@ -678,25 +678,25 @@ export function NetWorth() {
         {/* FI Calculator */}
         <div className="card" style={{ padding: 24 }}>
           <h3 className="section-heading" style={{ marginBottom: 20 }}>Financial Independence</h3>
-          <div style={{ padding: '14px', background: '#06070a', borderRadius: 8, marginBottom: 16 }}>
-            <div style={{ fontSize: 11, color: '#6b7494', marginBottom: 4 }}>FI Number (25× annual expenses)</div>
-            <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 22, color: '#5b8ff9' }}>{fmts(fiNumber)}</div>
+          <div style={{ padding: '14px', background: '#f5f6fa', borderRadius: 8, marginBottom: 16 }}>
+            <div style={{ fontSize: 11, color: '#8892b0', marginBottom: 4 }}>FI Number (25× annual expenses)</div>
+            <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 22, color: '#2563eb' }}>{fmts(fiNumber)}</div>
           </div>
           <div style={{ marginBottom: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span style={{ fontSize: 13, color: '#a0aac0' }}>FI Progress</span>
-              <span style={{ fontSize: 13, fontFamily: "'JetBrains Mono',monospace", color: '#5b8ff9' }}>{fiPct?.toFixed(1)}%</span>
+              <span style={{ fontSize: 13, color: '#4a4f6a' }}>FI Progress</span>
+              <span style={{ fontSize: 13, fontFamily: "'JetBrains Mono',monospace", color: '#2563eb' }}>{fiPct?.toFixed(1)}%</span>
             </div>
             <ProgressBar pct={fiPct} color="#5b8ff9" height={10} />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div style={{ padding: '12px', background: '#06070a', borderRadius: 8 }}>
-              <div style={{ fontSize: 11, color: '#6b7494', marginBottom: 4 }}>Still Needed</div>
-              <div style={{ fontSize: 14, fontFamily: "'JetBrains Mono',monospace", color: '#f09b46' }}>{fmts(Math.max(fiNumber - netWorth, 0))}</div>
+            <div style={{ padding: '12px', background: '#f5f6fa', borderRadius: 8 }}>
+              <div style={{ fontSize: 11, color: '#8892b0', marginBottom: 4 }}>Still Needed</div>
+              <div style={{ fontSize: 14, fontFamily: "'JetBrains Mono',monospace", color: '#d97706' }}>{fmts(Math.max(fiNumber - netWorth, 0))}</div>
             </div>
-            <div style={{ padding: '12px', background: '#06070a', borderRadius: 8 }}>
-              <div style={{ fontSize: 11, color: '#6b7494', marginBottom: 4 }}>Passive Income (4%)</div>
-              <div style={{ fontSize: 14, fontFamily: "'JetBrains Mono',monospace", color: '#3ecf8e' }}>{fmts(netWorth * 0.04 / 12)}/mo</div>
+            <div style={{ padding: '12px', background: '#f5f6fa', borderRadius: 8 }}>
+              <div style={{ fontSize: 11, color: '#8892b0', marginBottom: 4 }}>Passive Income (4%)</div>
+              <div style={{ fontSize: 14, fontFamily: "'JetBrains Mono',monospace", color: '#16a34a' }}>{fmts(netWorth * 0.04 / 12)}/mo</div>
             </div>
           </div>
         </div>
@@ -713,15 +713,15 @@ export function NetWorth() {
                 <stop offset="95%" stopColor="#c8953a" stopOpacity={0}    />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1a1f2e" />
-            <XAxis dataKey="month" tick={{ fill: '#6b7494', fontSize: 11 }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fill: '#6b7494', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => fmts(v)} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#eef0f8" />
+            <XAxis dataKey="month" tick={{ fill: '#9098b8', fontSize: 11 }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fill: '#9098b8', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => fmts(v)} />
             <Tooltip content={<ChartTooltip currency={cur} />} />
             <ReferenceLine y={avgNW} stroke="#3d4460" strokeDasharray="4 4"
-              label={{ value: 'Avg', position: 'right', fill: '#3d4460', fontSize: 11 }} />
+              label={{ value: 'Avg', position: 'right', fill: '#c8ccd8', fontSize: 11 }} />
             <Area type="monotone" dataKey="netWorth" stroke="#c8953a" strokeWidth={2.5}
               fill="url(#nwHistGrad)" name="Net Worth"
-              dot={{ fill: '#c8953a', r: 3 }} />
+              dot={{ fill: '#c8920a', r: 3 }} />
           </AreaChart>
         </ResponsiveContainer>
       </div>
@@ -814,20 +814,20 @@ export function Settings({ onToast }) {
         <h3 className="section-heading" style={{ marginBottom: 20 }}>Account</h3>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
           {session?.picture
-            ? <img src={session.picture} alt="" style={{ width: 52, height: 52, borderRadius: '50%', border: '2px solid #1a1f2e' }} />
-            : <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'linear-gradient(135deg,#c8953a,#e8c060)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 600, color: '#06070a' }}>
+            ? <img src={session.picture} alt="" style={{ width: 52, height: 52, borderRadius: '50%', border: '2px solid #eef0f8' }} />
+            : <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'linear-gradient(135deg,#c8920a,#e8a820)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 600, color: '#ffffff' }}>
                 {session?.name?.[0]?.toUpperCase()}
               </div>
           }
           <div>
             <div style={{ fontSize: 16, fontWeight: 500 }}>{session?.name}</div>
-            <div style={{ fontSize: 13, color: '#6b7494', marginTop: 2 }}>{session?.email}</div>
+            <div style={{ fontSize: 13, color: '#8892b0', marginTop: 2 }}>{session?.email}</div>
             <div className="chip" style={{ marginTop: 6 }}>
               {session?.provider === 'google' ? '🔵 Google Account' : '🔑 Email Account'}
             </div>
           </div>
         </div>
-        <button className="btn btn-outline" onClick={signOut} style={{ color: '#f06a6a', borderColor: 'rgba(240,106,106,0.3)' }}>
+        <button className="btn btn-outline" onClick={signOut} style={{ color: '#dc2626', borderColor: 'rgba(240,106,106,0.3)' }}>
           Sign Out
         </button>
       </div>
@@ -842,7 +842,7 @@ export function Settings({ onToast }) {
               <option key={c.code} value={c.code}>{c.symbol} — {c.name} ({c.code})</option>
             ))}
           </select>
-          <div style={{ fontSize: 12, color: '#6b7494', marginTop: 8 }}>Default is INR (₹) for Indian users</div>
+          <div style={{ fontSize: 12, color: '#8892b0', marginTop: 8 }}>Default is INR (₹) for Indian users</div>
         </div>
         <button className="btn btn-gold" onClick={savePrefs}>Save Preferences</button>
       </div>
@@ -850,21 +850,21 @@ export function Settings({ onToast }) {
       {/* Export / Import */}
       <div className="card" style={{ padding: 28 }}>
         <h3 className="section-heading" style={{ marginBottom: 8 }}>Data Management</h3>
-        <p style={{ fontSize: 13, color: '#6b7494', marginBottom: 20 }}>Export, backup, snapshot, or restore your financial data.</p>
+        <p style={{ fontSize: 13, color: '#8892b0', marginBottom: 20 }}>Export, backup, snapshot, or restore your financial data.</p>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 12, marginBottom: 16 }}>
           {[
-            { icon: '📥', label: 'Export JSON',   sub: 'Full data backup',      action: exportJSON,    color: '#3ecf8e' },
-            { icon: '📊', label: 'Export CSV',    sub: 'Spreadsheet format',    action: exportCSV,     color: '#5b8ff9' },
-            { icon: '🖨',  label: 'Print Report', sub: 'PDF-ready report',      action: printReport,   color: '#e8c060' },
+            { icon: '📥', label: 'Export JSON',   sub: 'Full data backup',      action: exportJSON,    color: '#16a34a' },
+            { icon: '📊', label: 'Export CSV',    sub: 'Spreadsheet format',    action: exportCSV,     color: '#2563eb' },
+            { icon: '🖨',  label: 'Print Report', sub: 'PDF-ready report',      action: printReport,   color: '#b8820e' },
             { icon: '📸', label: 'Save Snapshot', sub: 'Record current state',  action: handleSnapshot, color: '#9b8ff9' },
           ].map(item => (
             <button key={item.label} onClick={item.action}
-              style={{ padding: '16px', textAlign: 'left', cursor: 'pointer', borderRadius: 10, border: '1px solid #1a1f2e', background: '#06070a', transition: 'all 0.2s', width: '100%' }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = '#252d42'; e.currentTarget.style.background = '#0d1117' }}
+              style={{ padding: '16px', textAlign: 'left', cursor: 'pointer', borderRadius: 10, border: '1px solid #e8eaf0', background: '#f5f6fa', transition: 'all 0.2s', width: '100%' }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = '#d0d3e0'; e.currentTarget.style.background = '#0d1117' }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = '#1a1f2e'; e.currentTarget.style.background = '#06070a' }}>
               <div style={{ fontSize: 22, marginBottom: 8 }}>{item.icon}</div>
               <div style={{ fontSize: 13, fontWeight: 500, color: item.color, marginBottom: 4 }}>{item.label}</div>
-              <div style={{ fontSize: 11, color: '#6b7494' }}>{item.sub}</div>
+              <div style={{ fontSize: 11, color: '#8892b0' }}>{item.sub}</div>
             </button>
           ))}
         </div>
@@ -884,10 +884,10 @@ export function Settings({ onToast }) {
               <tbody>
                 {[...data.snapshots].reverse().map(s => (
                   <tr key={s.id}>
-                    <td style={{ color: '#6b7494', fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}>{s.date}</td>
-                    <td style={{ color: '#e8c060', fontFamily: "'JetBrains Mono',monospace" }}>{formatCompact(s.netWorth, s.currency || 'INR')}</td>
-                    <td style={{ color: '#3ecf8e', fontFamily: "'JetBrains Mono',monospace" }}>{formatCompact(s.totalAssets, s.currency || 'INR')}</td>
-                    <td style={{ color: '#f06a6a', fontFamily: "'JetBrains Mono',monospace" }}>{formatCompact(s.totalLiabilities, s.currency || 'INR')}</td>
+                    <td style={{ color: '#8892b0', fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}>{s.date}</td>
+                    <td style={{ color: '#b8820e', fontFamily: "'JetBrains Mono',monospace" }}>{formatCompact(s.netWorth, s.currency || 'INR')}</td>
+                    <td style={{ color: '#16a34a', fontFamily: "'JetBrains Mono',monospace" }}>{formatCompact(s.totalAssets, s.currency || 'INR')}</td>
+                    <td style={{ color: '#dc2626', fontFamily: "'JetBrains Mono',monospace" }}>{formatCompact(s.totalLiabilities, s.currency || 'INR')}</td>
                     <td style={{ color: s.cashFlow >= 0 ? '#3ecf8e' : '#f06a6a', fontFamily: "'JetBrains Mono',monospace" }}>
                       {s.cashFlow >= 0 ? '+' : ''}{formatCompact(s.cashFlow, s.currency || 'INR')}
                     </td>
@@ -901,8 +901,8 @@ export function Settings({ onToast }) {
 
       {/* Danger zone */}
       <div className="card" style={{ padding: 28, borderColor: 'rgba(240,106,106,0.2)' }}>
-        <h3 style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, color: '#f06a6a', marginBottom: 8 }}>Danger Zone</h3>
-        <p style={{ fontSize: 13, color: '#6b7494', marginBottom: 16 }}>Reset all data back to sample. This cannot be undone.</p>
+        <h3 style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, color: '#dc2626', marginBottom: 8 }}>Danger Zone</h3>
+        <p style={{ fontSize: 13, color: '#8892b0', marginBottom: 16 }}>Reset all data back to sample. This cannot be undone.</p>
         <button className="btn btn-danger" style={{ border: '1px solid rgba(240,106,106,0.3)', padding: '9px 18px' }} onClick={handleReset}>
           Reset to Sample Data
         </button>

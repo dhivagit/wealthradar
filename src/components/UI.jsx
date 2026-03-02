@@ -6,12 +6,12 @@ export function StatCard({ label, value, sub, color, change, icon, delay = 0 }) 
   return (
     <div className="card card-glow fade-up" style={{ padding: '22px 24px', animationDelay: `${delay}ms`, opacity: 0 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-        <span style={{ fontSize: 11, color: '#6b7494', letterSpacing: '0.08em', textTransform: 'uppercase' }}>{label}</span>
+        <span style={{ fontSize: 11, color: '#8892b0', letterSpacing: '0.08em', textTransform: 'uppercase' }}>{label}</span>
         {icon && <span style={{ fontSize: 18, opacity: 0.5 }}>{icon}</span>}
       </div>
-      <div className="stat-number" style={{ fontSize: 28, color: color || '#e2e4ec', lineHeight: 1.1, marginBottom: 6 }}>{value}</div>
+      <div className="stat-number" style={{ fontSize: 28, color: color || '#1a1d2e', lineHeight: 1.1, marginBottom: 6 }}>{value}</div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        {sub && <span style={{ fontSize: 12, color: '#6b7494' }}>{sub}</span>}
+        {sub && <span style={{ fontSize: 12, color: '#8892b0' }}>{sub}</span>}
         {change !== undefined && (
           <span style={{ fontSize: 12, color: change >= 0 ? '#3ecf8e' : '#f06a6a', fontFamily: "'JetBrains Mono',monospace" }}>
             {change >= 0 ? '▲' : '▼'} {Math.abs(change).toFixed(1)}%
@@ -70,7 +70,7 @@ export function Notification({ msg, type = 'info', onDone }) {
   return (
     <div className="notification">
       <span style={{ color: colors[type], fontSize: 16, fontWeight: 600 }}>{icons[type]}</span>
-      <span style={{ color: '#e2e4ec' }}>{msg}</span>
+      <span style={{ color: '#1a1d2e' }}>{msg}</span>
     </div>
   )
 }
@@ -79,11 +79,11 @@ export function Notification({ msg, type = 'info', onDone }) {
 export function ChartTooltip({ active, payload, label, currency = 'INR' }) {
   if (!active || !payload?.length) return null
   return (
-    <div style={{ background: '#0d1117', border: '1px solid #1a1f2e', borderRadius: 10, padding: '12px 16px', fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}>
-      <div style={{ color: '#6b7494', marginBottom: 8 }}>{label}</div>
+    <div style={{ background: '#ffffff', border: '1px solid #e8eaf0', borderRadius: 10, padding: '12px 16px', fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}>
+      <div style={{ color: '#8892b0', marginBottom: 8 }}>{label}</div>
       {payload.map((p, i) => (
         <div key={i} style={{ color: p.color, marginBottom: 3 }}>
-          {p.name}: <span style={{ color: '#e2e4ec' }}>{formatCompact(p.value, currency)}</span>
+          {p.name}: <span style={{ color: '#1a1d2e' }}>{formatCompact(p.value, currency)}</span>
         </div>
       ))}
     </div>
@@ -99,7 +99,7 @@ export function DonutSVG({ segments, size = 130, thick = 26 }) {
   let off = 0
   return (
     <svg width={size} height={size} style={{ transform: 'rotate(-90deg)', flexShrink: 0 }}>
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke="#1a1f2e" strokeWidth={thick} />
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="#eef0f8" strokeWidth={thick} />
       {segments.map((s, i) => {
         const dash = (s.value / total) * circ
         const el = (
@@ -128,7 +128,7 @@ export function DataTable({ cols, rows, onEdit, onDelete, currency = 'INR' }) {
         <tbody>
           {rows.length === 0 && (
             <tr>
-              <td colSpan={cols.length + 1} style={{ textAlign: 'center', color: '#3d4460', padding: '36px 16px' }}>
+              <td colSpan={cols.length + 1} style={{ textAlign: 'center', color: '#b0b8d0', padding: '36px 16px' }}>
                 No entries yet. Add one above.
               </td>
             </tr>
@@ -136,7 +136,7 @@ export function DataTable({ cols, rows, onEdit, onDelete, currency = 'INR' }) {
           {rows.map((row, i) => (
             <tr key={row.id} className="fade-up" style={{ animationDelay: `${i * 30}ms`, opacity: 0 }}>
               {cols.map(c => (
-                <td key={c.key} style={{ textAlign: c.right ? 'right' : 'left', color: c.color ? c.color(row) : '#e2e4ec', fontFamily: c.mono ? "'JetBrains Mono',monospace" : 'inherit' }}>
+                <td key={c.key} style={{ textAlign: c.right ? 'right' : 'left', color: c.color ? c.color(row) : '#1a1d2e', fontFamily: c.mono ? "'JetBrains Mono',monospace" : 'inherit' }}>
                   {c.render ? c.render(row, currency) : (row[c.key] ?? '—')}
                 </td>
               ))}

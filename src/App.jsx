@@ -8,14 +8,14 @@ import { Dashboard, Assets, Liabilities, CashFlow, Analytics, NetWorth, Settings
 import { TABS }                        from './utils/constants'
 import { formatCompact, formatCurrency } from './utils/helpers'
 
-// ── App shell (shown after login) ─────────────────────────────────────────────
+// ── App shell ────────────────────────────────────────────────────────────────
 function Shell() {
-  const { session }                          = useAuth()
-  const { settings, takeSnapshot, exportCSV } = useFinance()
-  const totals                               = useTotals()
-  const [activeTab, setActiveTab]            = useState('dashboard')
-  const [sidebarOpen, setSidebarOpen]        = useState(true)
-  const [notif, setNotif]                    = useState(null)
+  const { session }                            = useAuth()
+  const { settings, takeSnapshot, exportCSV }  = useFinance()
+  const totals                                 = useTotals()
+  const [activeTab,   setActiveTab]            = useState('dashboard')
+  const [sidebarOpen, setSidebarOpen]          = useState(true)
+  const [notif,       setNotif]                = useState(null)
 
   const toast = useCallback((msg, type = 'success') => setNotif({ msg, type }), [])
 
@@ -23,10 +23,7 @@ function Shell() {
   const fmts = (v) => formatCompact(v, cur)
   const fmt  = (v) => formatCurrency(v, cur)
 
-  const CURRENCY_SYMBOLS = {
-    INR:'₹', USD:'$', EUR:'€', GBP:'£',
-    JPY:'¥', CAD:'CA$', AUD:'A$', SGD:'S$', AED:'AED'
-  }
+  const CURRENCY_SYMBOLS = { INR:'₹', USD:'$', EUR:'€', GBP:'£', JPY:'¥', CAD:'CA$', AUD:'A$', SGD:'S$', AED:'AED' }
   const currSymbol = CURRENCY_SYMBOLS[cur] || '₹'
 
   const TAB_COMPONENTS = {
@@ -41,106 +38,112 @@ function Shell() {
 
   const handleSnapshot = () => {
     if (!totals) return
-    takeSnapshot({
-      netWorth:         totals.netWorth         || 0,
-      totalAssets:      totals.totalAssets      || 0,
-      totalLiabilities: totals.totalLiabilities || 0,
-      cashFlow:         totals.cashFlow         || 0,
-    })
+    takeSnapshot({ netWorth:totals.netWorth||0, totalAssets:totals.totalAssets||0, totalLiabilities:totals.totalLiabilities||0, cashFlow:totals.cashFlow||0 })
     toast('Snapshot saved!', 'success')
   }
 
-  return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#06070a' }}>
+  const activeTabObj = TABS.find(t => t.id === activeTab)
 
-      {/* ── Sidebar ─────────────────────────────────────────────────────────── */}
+  return (
+    <div style={{ display:'flex', minHeight:'100vh', background:'#f5f6fa' }}>
+
+      {/* ── Sidebar ───────────────────────────────────────────────────────── */}
       <aside style={{
-        width: sidebarOpen ? 220 : 0,
-        minWidth: sidebarOpen ? 220 : 0,
-        borderRight: '1px solid #1a1f2e',
+        width: sidebarOpen ? 230 : 0,
+        minWidth: sidebarOpen ? 230 : 0,
+        background: '#ffffff',
+        borderRight: '1px solid #e8eaf0',
         display: 'flex', flexDirection: 'column',
         transition: 'all 0.3s cubic-bezier(0.16,1,0.3,1)',
         overflow: 'hidden',
         position: 'sticky', top: 0, height: '100vh',
-        flexShrink: 0, background: '#06070a',
+        flexShrink: 0,
+        boxShadow: '2px 0 12px rgba(0,0,0,0.04)',
       }}>
         {/* Logo */}
-        <div style={{ padding: '20px 16px 16px', borderBottom: '1px solid #1a1f2e' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ padding:'22px 18px 18px', borderBottom:'1px solid #eef0f8' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
             <div style={{
-              width: 34, height: 34,
-              background: 'linear-gradient(135deg,#c8953a,#e8c060)',
-              borderRadius: 8, display: 'flex', alignItems: 'center',
-              justifyContent: 'center', fontSize: 18, flexShrink: 0,
+              width:36, height:36,
+              background:'linear-gradient(135deg,#c8920a,#e8a820)',
+              borderRadius:10, display:'flex', alignItems:'center',
+              justifyContent:'center', fontSize:18, flexShrink:0,
+              boxShadow:'0 4px 12px rgba(200,146,10,0.3)',
             }}>📡</div>
             <div>
-              <div style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 18, color: '#e2e4ec' }}>
+              <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:18, color:'#1a1d2e', lineHeight:1.2 }}>
                 Wealth<span className="gold-gradient">Radar</span>
               </div>
-              <div style={{ fontSize: 9, color: '#6b7494', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Pro</div>
+              <div style={{ fontSize:9, color:'#b0b8d0', letterSpacing:'0.1em', textTransform:'uppercase', marginTop:2 }}>Finance Pro</div>
             </div>
           </div>
         </div>
 
-        {/* Nav */}
-        <nav style={{ flex: 1, padding: '12px 10px', overflowY: 'auto' }}>
+        {/* Nav items */}
+        <nav style={{ flex:1, padding:'14px 10px', overflowY:'auto' }}>
           {TABS.map(t => (
             <div key={t.id}
               className={`nav-item ${activeTab === t.id ? 'active' : ''}`}
               onClick={() => setActiveTab(t.id)}>
-              <span style={{ fontSize: 14, opacity: 0.7 }}>{t.icon}</span>
-              <span>{t.label}</span>
+              <span style={{ fontSize:15 }}>{t.icon}</span>
+              <span style={{ fontSize:13 }}>{t.label}</span>
             </div>
           ))}
         </nav>
 
         {/* Net worth widget */}
-        <div style={{ padding: '14px 16px', borderTop: '1px solid #1a1f2e' }}>
-          <div style={{ fontSize: 10, color: '#6b7494', marginBottom: 5, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Net Worth</div>
-          <div className="gold-gradient" style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 18, fontWeight: 600 }}>
+        <div style={{ padding:'16px 18px', borderTop:'1px solid #eef0f8', background:'#fafbfe' }}>
+          <div style={{ fontSize:10, color:'#b0b8d0', marginBottom:5, letterSpacing:'0.08em', textTransform:'uppercase', fontWeight:500 }}>Net Worth</div>
+          <div className="gold-gradient" style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:20, fontWeight:700, lineHeight:1.2 }}>
             {totals?.netWorth !== undefined ? fmts(totals.netWorth) : '—'}
           </div>
           {totals?.cashFlow !== undefined && (
-            <div style={{ fontSize: 11, marginTop: 4, color: totals.cashFlow >= 0 ? '#3ecf8e' : '#f06a6a' }}>
-              {totals.cashFlow >= 0 ? '▲' : '▼'} {fmt(Math.abs(totals.cashFlow))}/mo
+            <div style={{ fontSize:11, marginTop:5, color:totals.cashFlow >= 0 ? '#16a34a' : '#dc2626', fontWeight:500 }}>
+              {totals.cashFlow >= 0 ? '▲' : '▼'} {fmt(Math.abs(totals.cashFlow))}/mo cash flow
             </div>
           )}
         </div>
       </aside>
 
-      {/* ── Main content ────────────────────────────────────────────────────── */}
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+      {/* ── Main area ─────────────────────────────────────────────────────── */}
+      <div style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column' }}>
 
         {/* Topbar */}
         <header style={{
-          height: 58, borderBottom: '1px solid #1a1f2e',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '0 24px', position: 'sticky', top: 0,
-          background: 'rgba(6,7,10,0.95)', backdropFilter: 'blur(16px)',
-          zIndex: 100, flexShrink: 0,
+          height:60, borderBottom:'1px solid #eef0f8',
+          display:'flex', alignItems:'center', justifyContent:'space-between',
+          padding:'0 28px', position:'sticky', top:0,
+          background:'rgba(255,255,255,0.97)',
+          backdropFilter:'blur(16px)',
+          zIndex:100, flexShrink:0,
+          boxShadow:'0 1px 8px rgba(0,0,0,0.05)',
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button className="btn btn-ghost btn-icon"
-              style={{ fontSize: 18 }}
+          <div style={{ display:'flex', alignItems:'center', gap:14 }}>
+            <button className="btn btn-ghost btn-icon" style={{ fontSize:18, color:'#6b7494' }}
               onClick={() => setSidebarOpen(s => !s)}>☰</button>
-            <h2 style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 19, color: '#e2e4ec' }}>
-              {TABS.find(t => t.id === activeTab)?.label}
-            </h2>
+            <div>
+              <h2 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:20, color:'#1a1d2e', lineHeight:1.2 }}>
+                {activeTabObj?.label}
+              </h2>
+            </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+
+          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
             <div className="chip">{currSymbol} {cur}</div>
             <button className="btn btn-gold btn-sm" onClick={handleSnapshot}>📸 Snapshot</button>
-            <button className="btn btn-outline btn-sm" onClick={() => { exportCSV(); toast('CSV exported', 'info') }}>⬇ CSV</button>
-            <div style={{ width: 1, height: 20, background: '#1a1f2e' }} />
-            <div onClick={() => setActiveTab('settings')} style={{ cursor: 'pointer' }}>
+            <button className="btn btn-outline btn-sm" onClick={() => { exportCSV(); toast('CSV exported','info') }}>⬇ CSV</button>
+            <div style={{ width:1, height:22, background:'#eef0f8' }} />
+            {/* Avatar */}
+            <div onClick={() => setActiveTab('settings')} style={{ cursor:'pointer' }}>
               {session?.picture
                 ? <img src={session.picture} alt=""
-                    style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid #1a1f2e', display: 'block' }} />
+                    style={{ width:34, height:34, borderRadius:'50%', border:'2px solid #eef0f8', display:'block', objectFit:'cover' }} />
                 : <div style={{
-                    width: 32, height: 32, borderRadius: '50%',
-                    background: 'linear-gradient(135deg,#c8953a,#e8c060)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 14, fontWeight: 600, color: '#06070a',
+                    width:34, height:34, borderRadius:'50%',
+                    background:'linear-gradient(135deg,#c8920a,#e8a820)',
+                    display:'flex', alignItems:'center', justifyContent:'center',
+                    fontSize:14, fontWeight:700, color:'#fff',
+                    boxShadow:'0 2px 8px rgba(200,146,10,0.3)',
                   }}>
                     {session?.name?.[0]?.toUpperCase() || 'U'}
                   </div>
@@ -149,8 +152,8 @@ function Shell() {
           </div>
         </header>
 
-        {/* Page */}
-        <main style={{ flex: 1, padding: 28, overflowY: 'auto' }}>
+        {/* Page content */}
+        <main style={{ flex:1, padding:'28px 32px', overflowY:'auto', background:'#f5f6fa' }}>
           <div key={activeTab} className="fade-up">
             {TAB_COMPONENTS[activeTab]}
           </div>
@@ -162,22 +165,12 @@ function Shell() {
   )
 }
 
-// ── Auth gate ─────────────────────────────────────────────────────────────────
 function AuthGate() {
   const { session } = useAuth()
   if (!session) return <AuthScreen />
-  return (
-    <FinanceProvider>
-      <Shell />
-    </FinanceProvider>
-  )
+  return <FinanceProvider><Shell /></FinanceProvider>
 }
 
-// ── Root ──────────────────────────────────────────────────────────────────────
 export default function App() {
-  return (
-    <AuthProvider>
-      <AuthGate />
-    </AuthProvider>
-  )
+  return <AuthProvider><AuthGate /></AuthProvider>
 }

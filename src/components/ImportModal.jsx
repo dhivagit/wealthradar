@@ -280,7 +280,7 @@ export default function ImportModal({ onClose, onImported }) {
           <button key={key}
             onClick={() => { setBroker(key); setStep(b.manualOnly ? 'manual' : 'upload') }}
             style={{
-              background: broker === key ? 'rgba(200,149,58,0.1)' : '#06070a',
+              background: broker === key ? 'rgba(200,146,10,0.1)' : '#06070a',
               border: `1px solid ${broker === key ? '#c8953a' : '#1a1f2e'}`,
               borderRadius: 10, padding: '14px 16px', cursor: 'pointer',
               textAlign: 'left', transition: 'all 0.2s',
@@ -288,10 +288,10 @@ export default function ImportModal({ onClose, onImported }) {
             onMouseEnter={e => { e.currentTarget.style.borderColor = '#252d42'; e.currentTarget.style.background = '#0d1117' }}
             onMouseLeave={e => {
               e.currentTarget.style.borderColor = broker === key ? '#c8953a' : '#1a1f2e'
-              e.currentTarget.style.background  = broker === key ? 'rgba(200,149,58,0.1)' : '#06070a'
+              e.currentTarget.style.background  = broker === key ? 'rgba(200,146,10,0.1)' : '#06070a'
             }}>
             <div style={{ fontSize: 22, marginBottom: 8 }}>{b.logo}</div>
-            <div style={{ fontSize: 13, fontWeight: 500, color: '#e2e4ec', marginBottom: 4 }}>{b.label}</div>
+            <div style={{ fontSize: 13, fontWeight: 500, color: '#1a1d2e', marginBottom: 4 }}>{b.label}</div>
             <div style={{ fontSize: 11, color: '#6b7494' }}>{b.category || 'Any category'}</div>
           </button>
         ))}
@@ -312,12 +312,12 @@ export default function ImportModal({ onClose, onImported }) {
     const cfg = BROKERS[broker]
     return (
       <Modal title={`Import from ${cfg.label}`} onClose={onClose} wide>
-        <button onClick={() => setStep('broker')} style={{ background:'none', border:'none', color:'#6b7494', cursor:'pointer', fontSize:13, marginBottom:20, padding:0 }}>← Back</button>
+        <button onClick={() => setStep('broker')} style={{ background:'none', border:'none', color:'#8892b0', cursor:'pointer', fontSize:13, marginBottom:20, padding:0 }}>← Back</button>
 
         {/* Instructions */}
-        <div style={{ background:'#06070a', border:'1px solid #1a1f2e', borderRadius:10, padding:'16px 18px', marginBottom:20 }}>
-          <div style={{ fontSize:12, color:'#6b7494', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.07em' }}>How to export from {cfg.label}</div>
-          <div style={{ fontSize:13, color:'#e2e4ec', marginBottom: cfg.downloadUrl ? 12 : 0 }}>{cfg.logo} {cfg.instructions}</div>
+        <div style={{ background:'#f5f6fa', border:'1px solid #e8eaf0', borderRadius:10, padding:'16px 18px', marginBottom:20 }}>
+          <div style={{ fontSize:12, color:'#8892b0', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.07em' }}>How to export from {cfg.label}</div>
+          <div style={{ fontSize:13, color:'#1a1d2e', marginBottom: cfg.downloadUrl ? 12 : 0 }}>{cfg.logo} {cfg.instructions}</div>
           {cfg.downloadUrl && (
             <a href={cfg.downloadUrl} target="_blank" rel="noreferrer"
               style={{ fontSize:12, color:'#c8953a', display:'inline-flex', alignItems:'center', gap:4 }}>
@@ -328,14 +328,14 @@ export default function ImportModal({ onClose, onImported }) {
 
         {/* Expected format */}
         <div style={{ marginBottom:20 }}>
-          <div style={{ fontSize:11, color:'#6b7494', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.07em' }}>Expected CSV format</div>
-          <div style={{ overflowX:'auto', background:'#06070a', borderRadius:8, border:'1px solid #1a1f2e', padding:'12px' }}>
+          <div style={{ fontSize:11, color:'#8892b0', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.07em' }}>Expected CSV format</div>
+          <div style={{ overflowX:'auto', background:'#f5f6fa', borderRadius:8, border:'1px solid #e8eaf0', padding:'12px' }}>
             <table style={{ fontSize:11, fontFamily:"'JetBrains Mono',monospace", width:'100%', borderCollapse:'collapse' }}>
               <tbody>
                 {cfg.sampleRows.map((row, i) => (
                   <tr key={i}>
                     {row.map((cell, j) => (
-                      <td key={j} style={{ padding:'4px 12px', borderBottom: i === 0 ? '1px solid #1a1f2e' : 'none', color: i === 0 ? '#6b7494' : '#a0aac0', whiteSpace:'nowrap' }}>
+                      <td key={j} style={{ padding:'4px 12px', borderBottom: i === 0 ? '1px solid #e8eaf0' : 'none', color: i === 0 ? '#8892b0' : '#4a4f6a', whiteSpace:'nowrap' }}>
                         {cell}
                       </td>
                     ))}
@@ -356,24 +356,24 @@ export default function ImportModal({ onClose, onImported }) {
             border: `2px dashed ${dragOver ? '#c8953a' : '#1a1f2e'}`,
             borderRadius: 12, padding: '36px 20px', textAlign: 'center',
             cursor: 'pointer', transition: 'all 0.2s', marginBottom: 16,
-            background: dragOver ? 'rgba(200,149,58,0.05)' : 'transparent',
+            background: dragOver ? 'rgba(200,146,10,0.05)' : 'transparent',
           }}>
           <div style={{ fontSize: 32, marginBottom: 12 }}>📂</div>
-          <div style={{ fontSize: 14, color: '#e2e4ec', marginBottom: 6 }}>Drop your CSV file here</div>
+          <div style={{ fontSize: 14, color: '#1a1d2e', marginBottom: 6 }}>Drop your CSV file here</div>
           <div style={{ fontSize: 12, color: '#6b7494', marginBottom: 16 }}>or click to browse</div>
           <div className="btn btn-gold btn-sm" style={{ display:'inline-flex' }}>Choose File</div>
           <input ref={fileRef} type="file" accept=".csv,.txt,.xls,.xlsx" style={{ display:'none' }} onChange={handleFileChange} />
         </div>
 
         {error && (
-          <div style={{ color:'#f06a6a', fontSize:13, padding:'10px 14px', background:'rgba(240,106,106,0.08)', border:'1px solid rgba(240,106,106,0.2)', borderRadius:8, marginBottom:16 }}>
+          <div style={{ color:'#dc2626', fontSize:13, padding:'10px 14px', background:'rgba(220,38,38,0.06)', border:'1px solid rgba(240,106,106,0.2)', borderRadius:8, marginBottom:16 }}>
             ⚠ {error}
           </div>
         )}
 
         {/* Manual entry fallback */}
-        <div style={{ borderTop:'1px solid #1a1f2e', paddingTop:16 }}>
-          <div style={{ fontSize:12, color:'#6b7494', marginBottom:10 }}>Or add entries manually:</div>
+        <div style={{ borderTop:'1px solid #eef0f8', paddingTop:16 }}>
+          <div style={{ fontSize:12, color:'#8892b0', marginBottom:10 }}>Or add entries manually:</div>
           <ManualEntryRow
             row={manualRow}
             onChange={setManualRow}
@@ -391,7 +391,7 @@ export default function ImportModal({ onClose, onImported }) {
     const cfg = BROKERS[broker]
     return (
       <Modal title={`Add ${cfg.label} Holdings`} onClose={onClose} wide>
-        <button onClick={() => setStep('broker')} style={{ background:'none', border:'none', color:'#6b7494', cursor:'pointer', fontSize:13, marginBottom:20, padding:0 }}>← Back</button>
+        <button onClick={() => setStep('broker')} style={{ background:'none', border:'none', color:'#8892b0', cursor:'pointer', fontSize:13, marginBottom:20, padding:0 }}>← Back</button>
 
         <div style={{ background:'rgba(91,143,249,0.06)', border:'1px solid rgba(91,143,249,0.15)', borderRadius:8, padding:'12px 16px', marginBottom:20, fontSize:13, color:'#8892b0' }}>
           ℹ {cfg.instructions}
@@ -407,11 +407,11 @@ export default function ImportModal({ onClose, onImported }) {
 
         {parsed.length > 0 && (
           <div style={{ marginTop:20 }}>
-            <div style={{ fontSize:12, color:'#6b7494', marginBottom:10 }}>{parsed.length} entries added:</div>
+            <div style={{ fontSize:12, color:'#8892b0', marginBottom:10 }}>{parsed.length} entries added:</div>
             {parsed.map(item => (
-              <div key={item.id} style={{ display:'flex', justifyContent:'space-between', padding:'8px 12px', background:'#06070a', borderRadius:8, marginBottom:6, fontSize:13 }}>
-                <span style={{ color:'#e2e4ec' }}>{item.name}</span>
-                <span style={{ color:'#3ecf8e', fontFamily:"'JetBrains Mono',monospace" }}>₹{item.value.toLocaleString()}</span>
+              <div key={item.id} style={{ display:'flex', justifyContent:'space-between', padding:'8px 12px', background:'#f5f6fa', borderRadius:8, marginBottom:6, fontSize:13 }}>
+                <span style={{ color:'#1a1d2e' }}>{item.name}</span>
+                <span style={{ color:'#16a34a', fontFamily:"'JetBrains Mono',monospace" }}>₹{item.value.toLocaleString()}</span>
               </div>
             ))}
             <button className="btn btn-gold" style={{ marginTop:12, width:'100%', justifyContent:'center' }} onClick={confirmImport}>
@@ -427,8 +427,8 @@ export default function ImportModal({ onClose, onImported }) {
   if (step === 'preview') return (
     <Modal title="Review & Import" onClose={onClose} wide>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16, flexWrap:'wrap', gap:10 }}>
-        <div style={{ fontSize:13, color:'#6b7494' }}>
-          <span style={{ color:'#3ecf8e', fontWeight:500 }}>{selectedCount}</span> of {parsed.length} rows selected
+        <div style={{ fontSize:13, color:'#8892b0' }}>
+          <span style={{ color:'#16a34a', fontWeight:500 }}>{selectedCount}</span> of {parsed.length} rows selected
         </div>
         <div style={{ display:'flex', gap:8 }}>
           <button className="btn btn-ghost btn-sm" onClick={() => toggleAll(true)}>Select All</button>
@@ -440,37 +440,37 @@ export default function ImportModal({ onClose, onImported }) {
         <table style={{ width:'100%', borderCollapse:'collapse' }}>
           <thead>
             <tr>
-              <th style={{ padding:'8px 12px', textAlign:'left', fontSize:11, color:'#6b7494', borderBottom:'1px solid #1a1f2e', width:32 }}></th>
-              <th style={{ padding:'8px 12px', textAlign:'left', fontSize:11, color:'#6b7494', borderBottom:'1px solid #1a1f2e' }}>Name</th>
-              <th style={{ padding:'8px 12px', textAlign:'left', fontSize:11, color:'#6b7494', borderBottom:'1px solid #1a1f2e' }}>Category</th>
-              <th style={{ padding:'8px 12px', textAlign:'right', fontSize:11, color:'#6b7494', borderBottom:'1px solid #1a1f2e' }}>Value (₹)</th>
+              <th style={{ padding:'8px 12px', textAlign:'left', fontSize:11, color:'#8892b0', borderBottom:'1px solid #eef0f8', width:32 }}></th>
+              <th style={{ padding:'8px 12px', textAlign:'left', fontSize:11, color:'#8892b0', borderBottom:'1px solid #eef0f8' }}>Name</th>
+              <th style={{ padding:'8px 12px', textAlign:'left', fontSize:11, color:'#8892b0', borderBottom:'1px solid #eef0f8' }}>Category</th>
+              <th style={{ padding:'8px 12px', textAlign:'right', fontSize:11, color:'#8892b0', borderBottom:'1px solid #eef0f8' }}>Value (₹)</th>
             </tr>
           </thead>
           <tbody>
             {parsed.map(item => (
               <tr key={item.id} style={{ opacity: selected[item.id] ? 1 : 0.4, transition:'opacity 0.15s' }}>
-                <td style={{ padding:'9px 12px', borderBottom:'1px solid #0d1117' }}>
+                <td style={{ padding:'9px 12px', borderBottom:'1px solid #f0f1f8' }}>
                   <input type="checkbox" checked={!!selected[item.id]}
                     onChange={e => setSelected(s => ({ ...s, [item.id]: e.target.checked }))}
                     style={{ accentColor:'#c8953a', width:14, height:14, cursor:'pointer' }} />
                 </td>
-                <td style={{ padding:'9px 12px', borderBottom:'1px solid #0d1117', fontSize:13, color:'#e2e4ec' }}>
+                <td style={{ padding:'9px 12px', borderBottom:'1px solid #f0f1f8', fontSize:13, color:'#1a1d2e' }}>
                   {item.name}
-                  {item.institution && <span style={{ fontSize:11, color:'#6b7494', marginLeft:8 }}>{item.institution}</span>}
+                  {item.institution && <span style={{ fontSize:11, color:'#8892b0', marginLeft:8 }}>{item.institution}</span>}
                 </td>
-                <td style={{ padding:'9px 12px', borderBottom:'1px solid #0d1117' }}>
+                <td style={{ padding:'9px 12px', borderBottom:'1px solid #f0f1f8' }}>
                   <select
                     value={overridesCat[item.id] || item.category}
                     onChange={e => setOverridesCat(s => ({ ...s, [item.id]: e.target.value }))}
-                    style={{ background:'#06070a', border:'1px solid #1a1f2e', borderRadius:6, color:'#a0aac0', fontSize:11, padding:'3px 8px', fontFamily:"'Outfit',sans-serif", cursor:'pointer' }}>
+                    style={{ background:'#f5f6fa', border:'1px solid #e8eaf0', borderRadius:6, color:'#4a4f6a', fontSize:11, padding:'3px 8px', fontFamily:"'Outfit',sans-serif", cursor:'pointer' }}>
                     {ASSET_CATS.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </td>
-                <td style={{ padding:'9px 12px', borderBottom:'1px solid #0d1117', textAlign:'right', fontFamily:"'JetBrains Mono',monospace", fontSize:13, color: item.value > 0 ? '#3ecf8e' : '#f06a6a' }}>
+                <td style={{ padding:'9px 12px', borderBottom:'1px solid #f0f1f8', textAlign:'right', fontFamily:"'JetBrains Mono',monospace", fontSize:13, color: item.value > 0 ? '#16a34a' : '#dc2626' }}>
                   {item.value > 0 ? item.value.toLocaleString() : (
                     <input
                       type="number" placeholder="Enter value"
-                      style={{ background:'#06070a', border:'1px solid #c8953a', borderRadius:6, color:'#e2e4ec', fontSize:12, padding:'3px 8px', width:100, fontFamily:"'JetBrains Mono',monospace", textAlign:'right' }}
+                      style={{ background:'#f5f6fa', border:'1px solid #c8953a', borderRadius:6, color:'#1a1d2e', fontSize:12, padding:'3px 8px', width:100, fontFamily:"'JetBrains Mono',monospace", textAlign:'right' }}
                       onChange={e => setParsed(prev => prev.map(p => p.id === item.id ? { ...p, value: parseFloat(e.target.value) || 0 } : p))}
                     />
                   )}
@@ -482,8 +482,8 @@ export default function ImportModal({ onClose, onImported }) {
       </div>
 
       {/* Add more manually */}
-      <div style={{ borderTop:'1px solid #1a1f2e', paddingTop:16, marginBottom:20 }}>
-        <div style={{ fontSize:12, color:'#6b7494', marginBottom:10 }}>Add more rows manually:</div>
+      <div style={{ borderTop:'1px solid #eef0f8', paddingTop:16, marginBottom:20 }}>
+        <div style={{ fontSize:12, color:'#8892b0', marginBottom:10 }}>Add more rows manually:</div>
         <ManualEntryRow
           row={manualRow}
           onChange={setManualRow}
@@ -494,7 +494,7 @@ export default function ImportModal({ onClose, onImported }) {
       </div>
 
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12 }}>
-        <div style={{ fontSize:13, color:'#6b7494' }}>
+        <div style={{ fontSize:13, color:'#8892b0' }}>
           Total value: <span style={{ color:'#e8c060', fontFamily:"'JetBrains Mono',monospace" }}>
             ₹{parsed.filter(p => selected[p.id]).reduce((s, p) => s + (p.value||0), 0).toLocaleString()}
           </span>
@@ -514,10 +514,10 @@ export default function ImportModal({ onClose, onImported }) {
     <Modal title="Import Complete! 🎉" onClose={onClose}>
       <div style={{ textAlign:'center', padding:'20px 0' }}>
         <div style={{ fontSize:56, marginBottom:16 }}>✅</div>
-        <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:24, color:'#3ecf8e', marginBottom:8 }}>
+        <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:24, color:'#16a34a', marginBottom:8 }}>
           Assets Imported Successfully
         </div>
-        <div style={{ fontSize:13, color:'#6b7494', marginBottom:28 }}>
+        <div style={{ fontSize:13, color:'#8892b0', marginBottom:28 }}>
           Your holdings are now visible in the Assets tab.
         </div>
         <button className="btn btn-gold" style={{ width:'100%', justifyContent:'center', padding:12 }} onClick={onClose}>
