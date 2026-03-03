@@ -18,13 +18,39 @@ function ForgotPasswordView({ onBack }) {
   const [email,   setEmail]   = useState('')
   const [sent,    setSent]    = useState(false)
   const [loading, setLoading] = useState(false)
+  const [error,   setError]   = useState('')
 
   const handleSubmit = async () => {
     if (!email.includes('@')) return
+    setError('')
     setLoading(true)
-    await new Promise(r => setTimeout(r, 800))
-    setLoading(false)
-    setSent(true)
+    const serviceId  = import.meta.env.VITE_EMAILJS_SERVICE_ID
+    const templateId = import.meta.env.VITE_EMAILJS_TEMPLATE_ID
+    const publicKey  = import.meta.env.VITE_EMAILJS_PUBLIC_KEY
+    if (!serviceId || !templateId || !publicKey) {
+      setLoading(false)
+      setError('Email service not configured. Add VITE_EMAILJS_SERVICE_ID, VITE_EMAILJS_TEMPLATE_ID and VITE_EMAILJS_PUBLIC_KEY to your .env.local file. Sign up free at emailjs.com.')
+      return
+    }
+    try {
+      const token = Math.random().toString(36).slice(2) + Date.now().toString(36)
+      const resetLink = window.location.origin + '?reset=' + token + '&email=' + encodeURIComponent(email)
+      await new Promise((res, rej) => {
+        if (window.emailjs) { res(); return }
+        const s = document.createElement('script')
+        s.src = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js'
+        s.onload = () => { window.emailjs.init(publicKey); res() }
+        s.onerror = () => rej(new Error('Failed to load EmailJS'))
+        document.head.appendChild(s)
+      })
+      await window.emailjs.send(serviceId, templateId, {
+        to_email: email, to_name: email.split('@')[0],
+        reset_link: resetLink, app_name: 'WealthRadar',
+      })
+      setSent(true)
+    } catch {
+      setError('Failed to send email. Check your EmailJS credentials in .env.local.')
+    } finally { setLoading(false) }
   }
 
   if (sent) return (
@@ -148,7 +174,7 @@ function SignUpView({ onBack, onGoogleSignUp }) {
 }
 
 // ── Main AuthScreen ───────────────────────────────────────────────────────────
-export default function AuthScreen() {
+export default function AuthScreen({ onBack }) {
   const { signIn, signInDemo, signInWithGoogle } = useAuth()
   const [view,    setView]    = useState('login')   // 'login' | 'signup' | 'forgot'
   const [form,    setForm]    = useState({ email: '', password: '' })
@@ -183,21 +209,21 @@ export default function AuthScreen() {
 
   // ── FORGOT PASSWORD ────────────────────────────────────────────────────────
   if (view === 'forgot') return (
-    <AuthLayout>
+    <AuthLayout onBack={onBack}>
       <ForgotPasswordView onBack={() => setView('login')} />
     </AuthLayout>
   )
 
   // ── SIGN UP ────────────────────────────────────────────────────────────────
   if (view === 'signup') return (
-    <AuthLayout>
+    <AuthLayout onBack={onBack}>
       <SignUpView onBack={() => setView('login')} onGoogleSignUp={handleGoogleAuth} />
     </AuthLayout>
   )
 
   // ── SIGN IN ────────────────────────────────────────────────────────────────
   return (
-    <AuthLayout>
+    <AuthLayout onBack={onBack}>
       <h3 style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:26, color:'#1a1d2e', marginBottom:4 }}>
         Welcome back
       </h3>
@@ -276,7 +302,8 @@ export default function AuthScreen() {
 }
 
 // ── Auth page wrapper ─────────────────────────────────────────────────────────
-function AuthLayout({ children }) {
+function AuthLayout({ children, onBack }) {
+  // "Back to home" link shown when coming from landing page
   return (
     <div className="auth-bg" style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
       <div className="auth-grid" />
