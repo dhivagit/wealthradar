@@ -144,3 +144,43 @@ export function AuthProvider({ children }) {
 }
 
 export const useAuth = () => useContext(AuthContext)
+
+// ── Named export: update password with case-insensitive email lookup ─────────
+export function updatePassword(email, newPassword) {
+  try {
+    const users      = DB.getUsers()
+    const emailLower = email.trim().toLowerCase()
+
+    // Case-insensitive lookup — try exact match first, then lowercase scan
+    let matchKey = null
+    if (users[emailLower]) {
+      matchKey = emailLower
+    } else {
+      // Scan all keys case-insensitively
+      matchKey = Object.keys(users).find(k => k.toLowerCase() === emailLower) || null
+    }
+
+    if (!matchKey) {
+      // Account doesn't exist yet — create it with the new password
+      // This handles the case where someone got a reset link but never signed up
+      // (they can use it as a one-time account creation)
+      const userId = uid()
+      users[emailLower] = {
+        id: userId, name: emailLower.split('@')[0],
+        email: emailLower, hash: hashPassword(newPassword),
+        provider: 'local', createdAt: Date.now(),
+      }
+      DB.saveUsers(users)
+      DB.saveData(userId, createSampleData())
+      DB.saveSettings(userId, { currency: 'INR' })
+      return { ok: true, created: true }
+    }
+
+    // Update existing account
+    users[matchKey] = { ...users[matchKey], hash: hashPassword(newPassword) }
+    DB.saveUsers(users)
+    return { ok: true }
+  } catch {
+    return { error: 'Failed to update password. Please try again.' }
+  }
+}
