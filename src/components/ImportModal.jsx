@@ -113,6 +113,52 @@ const BROKERS = {
       ['15/04/2024', 'Salary Credit', '', '95000', '275000.00'],
     ],
   },
+  icicidirect: {
+    label: 'ICICI Direct',
+    logo: '🔴',
+    category: 'Stocks & Equities',
+    institution: 'ICICI Direct',
+    downloadUrl: 'https://www.icicidirect.com/portfolio',
+    instructions: 'My Account → Portfolio → Holdings → Download (PortFolioEqtSummary CSV)',
+    columns: {
+      name:     ['company name','stock symbol','symbol','scrip','stock','security name'],
+      qty:      ['qty','quantity','shares','net qty'],
+      avgPrice: ['average cost price','avg cost price','avg cost','average price','purchase price'],
+      ltp:      ['current market price','current price','ltp','last price','market price','closing price'],
+      value:    ['value at market price','current value','market value','present value','mkt value'],
+      invested: ['value at cost','invested value','cost value','purchase value','investment value'],
+      plpct:    ['unrealized profit/loss %','unrealized p&l %','p&l%','gain/loss %'],
+    },
+    sampleRows: [
+      ['Stock Symbol', 'Company Name', 'ISIN Code', 'Qty', 'Average Cost Price', 'Current Market Price', 'Value At Cost', 'Value At Market Price', 'Unrealized Profit/Loss %'],
+      ['ASHLEY', 'ASHOK LEYLAND LTD', 'INE208A01029', '50', '126.35', '178.48', '6317.50', '8924.00', '41.26'],
+      ['TCS', 'TATA CONSULTANCY SERVICES LTD', 'INE467B01029', '36', '3328.17', '2460.00', '119814.12', '88560.00', '(26.09)'],
+      ['GOLDEX', 'NIPPON INDIA ETF GOLD BEES', 'INF204KB17I5', '1136', '63.38', '127.43', '71999.68', '144760.48', '101.06'],
+    ],
+  },
+  indmoney: {
+    label: 'INDMoney',
+    logo: '🟠',
+    category: 'Stocks & Equities',
+    institution: 'INDMoney',
+    downloadUrl: 'https://app.indmoney.com/stocks/portfolio',
+    instructions: 'Stocks → Portfolio → Download Holdings Report (XLSX)',
+    columns: {
+      name:     ['stock name','company name','name','symbol','scrip'],
+      qty:      ['quantity','qty','shares','no. of shares'],
+      avgPrice: ['average buy price','avg buy price','average price','avg price','purchase price'],
+      ltp:      ['current price','ltp','market price','last price','closing price','current market price'],
+      value:    ['current value','market value','present value','portfolio value'],
+      invested: ['buy value','invested value','investment value','cost value','total invested'],
+      plpct:    ['gain/loss %','unrealized p&l %','p&l%','profit/loss %','return %'],
+    },
+    sampleRows: [
+      ['Stock Name', 'ISIN', 'Quantity', 'Average buy price', 'Buy Value'],
+      ['Prakash Pipes Ltd', 'INE050001010', '14', '491.07', '6874.98'],
+      ['Cipla Ltd', 'INE059A01026', '15', '1441.40', '21621.00'],
+      ['Tata Gold Exchange Traded Fund', 'INF277KA1976', '253', '10.91', '2760.23'],
+    ],
+  },
   generic: {
     label: 'Generic CSV / Excel',
     logo: '📄',
@@ -192,15 +238,22 @@ function detectHeaderRow(rows, candidates) {
 }
 
 function parseValue(str) {
-  if (!str) return 0
-  const n = parseFloat(str.toString().replace(/[₹$,\s]/g, ''))
+  if (!str && str !== 0) return 0
+  const s = str.toString().trim()
+  // ICICIDirect uses (1234.56) for negative values
+  if (s.startsWith('(') && s.endsWith(')')) {
+    const n = parseFloat(s.slice(1, -1).replace(/[₹$,\s+]/g, ''))
+    return isNaN(n) ? 0 : -n
+  }
+  const n = parseFloat(s.replace(/[₹$,\s+]/g, ''))
   return isNaN(n) ? 0 : n
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function ImportModal({ onClose, onImported }) {
-  const { addItem } = useFinance()
+  const { addItem, updateItem, data: financeData } = useFinance()
   const [step,         setStep]         = useState('broker')   // broker | preview | done
+  const [importCounts, setImportCounts]  = useState({ added:0, updated:0 })
   const [broker,       setBroker]       = useState(null)
   const [parsed,       setParsed]       = useState([])         // [{name,value,category,institution,note}]
   const [selected,     setSelected]     = useState({})
@@ -231,7 +284,7 @@ export default function ImportModal({ onClose, onImported }) {
       return new Promise((res, rej) => {
         const reader = new FileReader()
         reader.onload = e => {
-          try { res(parseCSV(e.target.result)) }
+          try { res({ _csv: parseCSV(e.target.result) }) }
           catch (err) { rej(err) }
         }
         reader.onerror = () => rej(new Error('Failed to read file'))
@@ -239,20 +292,20 @@ export default function ImportModal({ onClose, onImported }) {
       })
     }
 
-    // Excel (.xlsx, .xls) — use SheetJS
+    // Excel (.xlsx, .xls) — use SheetJS, return ALL sheets as { sheetName: rows }
     if (ext === 'xlsx' || ext === 'xls') {
       const XLSX = await loadSheetJS()
       return new Promise((res, rej) => {
         const reader = new FileReader()
         reader.onload = e => {
           try {
-            const wb      = XLSX.read(e.target.result, { type: 'array' })
-            const ws      = wb.Sheets[wb.SheetNames[0]]          // first sheet
-            // Keep ALL rows (including empty ones) so row indices are preserved
-            // Map to strings for uniform handling, but keep empty rows as empty arrays
-            const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
-              .map(row => row.map(cell => (cell === null || cell === undefined) ? '' : String(cell).trim()))
-            res(rows)
+            const wb     = XLSX.read(e.target.result, { type: 'array' })
+            const sheets = {}
+            wb.SheetNames.forEach(name => {
+              sheets[name] = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: '' })
+                .map(row => row.map(cell => (cell === null || cell === undefined) ? '' : String(cell).trim()))
+            })
+            res(sheets)   // returns { 'Equity': rows[], 'Mutual Funds': rows[], ... }
           } catch (err) { rej(err) }
         }
         reader.onerror = () => rej(new Error('Failed to read Excel file'))
@@ -263,170 +316,300 @@ export default function ImportModal({ onClose, onImported }) {
     throw new Error('Unsupported file type. Please upload a .csv, .xls, or .xlsx file.')
   }
 
+  // ── Keyword-based sector detection for brokers with no sector column ────────
+  // (ICICIDirect, INDMoney — detect from company name or symbol)
+  const detectSectorFromName = (name) => {
+    const n = (name || '').toLowerCase()
+    // ETF / Index funds — already handled separately, skip here
+    const rules = [
+      // Banking
+      [['bank','banking','kotak mah','hdfc bank','icici bank','axis bank','sbi bank','indusind','federal bank','yes bank','bandhan bank','au small','dcb bank','karur','city union','tmb','south indian','hdb financial','rbl bank','csb bank'], 'Banking'],
+      // Insurance
+      [['insurance','life ins','general ins','bajaj allianz','icici pru','hdfc life','sbi life','star health','niva bupa','go digit'], 'Insurance'],
+      // Financial Services (NBFC, broking, fintech — check before broader finance keywords)
+      [['power finance','pfc','rec limited','lic housing','gruh finance','repco','manappuram','muthoot','sphoorty','bajaj fin','cholaman','shriram','mahindra fin','l&t fin','pnb housing','can fin','aptus','home first','aditya birla cap','iifl','microfinance','nbfc'], 'Financial Services'],
+      [['finance','financial'], 'Financial Services'],
+      // Software & IT (check specific names before generic 'tech')
+      [['tata consultancy','tcs','infosys','wipro','hcl tech','tech mahindra','ltimindtree','mphasis','persistent','coforge','oracle fin','hexaware','zensar','niit tech','mastek','kpit','happiest','birlasoft','saksoft','tanla','tanla platforms','newgen','tata elxsi','cyient','sasken','sonata','intellect design','nucleus software','rategain','latent view','nuvei','indiamart'], 'Software & IT'],
+      // Automobiles & Auto Ancillaries
+      [['mahindra','maruti','tata motors','ashok leyland','hero moto','bajaj auto','tvs motor','eicher','bosch','mrf','apollo tyre','ceat','motherson','endurance','sona bly','uno minda','rane','samvardhana','suprajit','precision camshaft','gabriel','fiem'], 'Automobiles'],
+      // Healthcare (hospitals — before pharma)
+      [['healthcare','health care','ttk health','apollo hosp','fortis','max health','narayana','aster','global health','rainbow','kims','yatharth','metropolis','dr lal','thyrocare','vijaya diag'], 'Healthcare'],
+      // Pharmaceuticals
+      [['pharma','cipla','sun pharma','drreddy','dr. reddy','biocon','divis','lupin','zydus','cadila','abbott','pfizer','natco','alkem','torrent pharma','ipca','laurus','granules','strides','glenmark','mankind','ajanta','eris','suven','sequent','solara','windlas','lincoln pharma','marksans'], 'Pharmaceuticals'],
+      // Oil & Gas
+      [['oil','petroleum','reliance ind','ongc','bpcl','hpcl','ioc','indian oil','gail','castrol','gujarat gas','indraprastha','mahanagar gas','petronet','aegis logistics','gulf oil'], 'Oil & Gas'],
+      // Energy & Power
+      [['coal india','ntpc','adani power','tata power','torrent power','cesc','jsw energy','renewable','green energy','avaada','acme','greenko','power grid','sjvn','nhpc','neepco','ireda','waaree','premier energies'], 'Energy & Power'],
+      // Metals & Mining
+      [['steel','tata steel','jsw steel','sail','jspl','jindal','hindalco','vedanta','nalco','moil','nmdc','national aluminium','vedl','hindustan zinc','national mineral','sandur','mishra dhatu'], 'Metals & Mining'],
+      // FMCG & Beverages (include liquor companies)
+      [['hindustan unilever','hul','itc','dabur','godrej consumer','marico','nestle','britannia','colgate','emami','jyothy','varun bev','radico','united spirits','united breweries','tilaknagar','globus spirits','som distilleries','mcdowell','mil industries','heritage foods'], 'FMCG'],
+      // Capital Goods & Engineering
+      [['larsen','l&t','siemens','abb','bhel','cummins','thermax','bharat forge','grindwell','timken','schaeffler','skf','elgi','kirloskar','honeywell','voltas','blue star','prakash industries','ncc','kalpataru','kec international','patel engineering','irb infra','ashoka buildcon','hem holdings'], 'Capital Goods'],
+      // Pipes, Fittings & Industrials (specific match before generic)
+      [['prakash pipes','supreme industries','astral','finolex','prince pipes','apollo pipes','nile','jain irrigation','kiri industries'], 'Industrials'],
+      [['pipes','fittings','valves','industrial'], 'Industrials'],
+      // Telecom
+      [['airtel','jio','vodafone','bharti','tata comm','sterlite tech','hfcl','route mobile','videocon'], 'Telecom'],
+      // Real Estate
+      [['dlf','godrej prop','oberoi','prestige','brigade','sobha','macrotech','lodha','kolte patil','phoenix','puravankara','mahindra lifespace','sunteck','nirlon'], 'Real Estate'],
+      // Cement
+      [['ultratech','shree cement','acc','ambuja','dalmia','jk cement','ramco','birla corp','heidelberg','india cements','prism johnson'], 'Cement'],
+      // Chemicals & Specialty
+      [['pidilite','asian paint','berger','kansai','nerolac','deepak nitrite','aarti ind','navin fluorine','srf','clean science','galaxy surf','fine organics','vinati organics','sudarshan chem','bodal chem','chemcrux','anupam rasayan'], 'Chemicals'],
+      // Retail & Consumer
+      [['avenue supermarts','dmart','trent','v-mart','metro brands','bata','relaxo','titan','kalyan','rajesh exports','vedant','manyavar','go fashion','aditya birla fashion','shoppers stop'], 'Retail & Consumer'],
+      // Logistics & Transport
+      [['adani port','concor','gateway dist','blue dart','gati','allcargo','transport corp','mahindra logistics','tvs supply','delhivery','xpressbees','safexpress'], 'Logistics'],
+      // Capital Markets & Exchanges
+      [['nse','bse','cdsl','nsdl','cams','computer age','kfin tech','crisil','care ratings','icra','angel one','motilal','iifl sec','5paisa','geojit','hdfc sec'], 'Capital Markets'],
+      // Textiles & Apparel
+      [['textile','fabric','yarn','fibre','raymond','arvind','vardhman','welspun','trident','ktm','siyaram','nitin spinners','indo count'], 'Textiles'],
+      // Agri & Fertilisers
+      [['fertiliser','fertilizer','agri','coromandel','chambal','deepak fert','gnfc','national fertilizers','rashtriya chemicals','bayer crop','pi industries','dhanuka','rallis'], 'Agriculture'],
+      // Media & Entertainment
+      [['media','entertainment','zee','sony','network18','sun tv','tv18','dish tv','pvr','inox','balaji telefilms','tips music','saregama'], 'Media & Entertainment'],
+      // Defence & Aerospace
+      [['defence','defense','aerospace','hal','bharat electronics','bel','bharat dynamics','mazagon','cochin shipyard','garden reach','paras defence','data patterns'], 'Defence'],
+    ]
+    for (const [keywords, sector] of rules) {
+      if (keywords.some(k => n.includes(k))) return sector
+    }
+    return ''   // Unknown — leave blank rather than guess wrong
+  }
+
+  // ── Parse a single sheet's rows into asset items ─────────────────────────
+  const parseSheetRows = (rows, sheetCfg) => {
+    const { institution, category, isMF } = sheetCfg
+
+    const nameCands     = ['stock name','company name','stock symbol','symbol','instrument','fund name','scheme name','tradingsymbol','scrip','security','stock','name']
+    const valueCands    = ['value at market price','current value','cur. val','market value','present value','portfolio value','mkt value','value','amount']
+    const ltpCands      = ['current market price','previous closing price','current price','market price','ltp','last price','close price','closing price']
+    const qtyCands      = ['quantity available','net qty','qty','quantity','shares','units','no. of shares']
+    const avgCands      = ['average cost price','average buy price','avg buy price','avg cost price','avg cost','average price','avg. cost','avg price','purchase price','cost price','avg purchase price','nav']
+    const investedCands = ['value at cost','buy value','invested value','investment value','total invested','cost value','purchase value','buy amount']
+    const plpctCands    = ['unrealized profit/loss %','unrealized p&l %','gain/loss %','p&l%','profit/loss %','return %']
+    const sectorCands   = ['sector','industry','instrument type']
+    const isinCands     = ['isin','isin code']
+
+    const allCands = [...nameCands,...valueCands,...ltpCands,...qtyCands,...avgCands,...sectorCands]
+
+    // Score-based header detection (same logic as detectHeaderRow)
+    let bestRow = null, bestScore = 0
+    for (let i = 0; i < Math.min(rows.length, 35); i++) {
+      const row = rows[i]
+      if (!row || row.length < 2) continue
+      const nonEmpty = row.filter(x => x && x.trim())
+      if (nonEmpty.length < 2) continue
+      const h = row.map(x => (x||'').toLowerCase().trim())
+      const nameScore  = nameCands.filter(c  => h.some(cell => cell.includes(c))).length * 3
+      const valueScore = [...valueCands,...ltpCands].filter(c => h.some(cell => cell.includes(c))).length * 2
+      const anyScore   = allCands.filter(c   => h.some(cell => cell.includes(c))).length
+      const widthBonus = nonEmpty.length >= 4 ? 5 : 0
+      const score = nameScore + valueScore + anyScore + widthBonus
+      if (score > bestScore) { bestScore = score; bestRow = { idx: i, headers: row.map(x => (x||'').trim()) } }
+    }
+    if (!bestRow || bestScore < 4) return []
+
+    const { idx: headerIdx, headers } = bestRow
+    const h = headers.map(x => x.toLowerCase())
+
+    const colIdx = (cands) => {
+      for (const c of cands) {
+        const i = h.findIndex(x => x.includes(c))
+        if (i !== -1) return i
+      }
+      return -1
+    }
+
+    const nameIdx     = colIdx(nameCands)
+    const ltpIdx      = colIdx(ltpCands)
+    const qtyIdx      = colIdx(qtyCands)
+    const avgIdx      = colIdx(avgCands)
+    const sectorIdx   = colIdx(sectorCands)
+    const valIdx      = colIdx(valueCands)
+    const investedIdx = colIdx(investedCands)
+    const plpctIdx    = colIdx(plpctCands)
+    const isinIdx     = colIdx(isinCands)
+
+    if (nameIdx === -1) return []
+
+    // Parse sector/instrument type — clean up MF instrument type like "{Equity - Small Cap true}"
+    const parseSector = (raw) => {
+      if (!raw) return ''
+      // MF instrument type format: "{Equity - Small Cap true}" → "Equity - Small Cap"
+      const cleaned = raw.replace(/^\{/, '').replace(/\s+true\}$/, '').replace(/\}$/, '').trim()
+      return cleaned.charAt(0).toUpperCase() + cleaned.slice(1).toLowerCase()
+    }
+
+    // Map MF instrument type to WealthRadar category
+    const mfCategory = (instrType) => {
+      const t = (instrType||'').toLowerCase()
+      if (t.includes('gold') || t.includes('silver') || t.includes('commodity')) return 'Gold & Precious Metals'
+      if (t.includes('debt') || t.includes('liquid') || t.includes('money market')) return 'Fixed Income & Bonds'
+      if (t.includes('hybrid')) return 'Mutual Funds'
+      if (t.includes('equity') || t.includes('elss')) return 'Mutual Funds'
+      if (t.includes('fund of fund') || t.includes('fof')) return 'Mutual Funds'
+      return 'Mutual Funds'
+    }
+
+    const equityCategory = (sector) => {
+      const s = (sector||'').toLowerCase()
+      if (s === 'etf') return 'Gold & Precious Metals'
+      return 'Stocks & Equities'
+    }
+
+    return rows.slice(headerIdx + 1)
+      .map((row, i) => {
+        const name   = (row[nameIdx]||'').trim().toUpperCase()
+        const qty    = qtyIdx !== -1  ? parseFloat(row[qtyIdx]||0)  : 0
+        const ltp    = ltpIdx !== -1  ? parseFloat(row[ltpIdx]||0)  : 0
+        const avg    = avgIdx !== -1  ? parseFloat(row[avgIdx]||0)  : 0
+        const sector = sectorIdx !== -1 ? parseSector(row[sectorIdx]||'') : ''
+
+        let value = 0
+        if (valIdx !== -1 && parseFloat(row[valIdx]||0) > 0) {
+          value = Math.round(parseFloat(row[valIdx]) * 100) / 100
+        } else if (qty > 0 && ltp > 0) {
+          value = Math.round(qty * ltp * 100) / 100
+        } else if (qty > 0 && avg > 0) {
+          value = Math.round(qty * avg * 100) / 100
+        }
+
+        // Invested value: use direct column if present, else compute qty × avg
+        const directInvested = investedIdx !== -1 ? parseValue(row[investedIdx]||'') : 0
+        const investedVal    = directInvested > 0
+          ? Math.round(directInvested * 100) / 100
+          : (qty > 0 && avg > 0 ? Math.round(qty * avg * 100) / 100 : 0)
+
+        // P&L%: priority → direct plpct col → compute from value/invested → compute from ltp/avg
+        let plPct = null
+        if (plpctIdx !== -1 && row[plpctIdx] && row[plpctIdx].toString().trim() !== '') {
+          plPct = parseValue(row[plpctIdx])   // handles (26.09) → -26.09
+        } else if (investedVal > 0 && value > 0) {
+          plPct = Math.round(((value - investedVal) / investedVal) * 10000) / 100
+        } else if (avg > 0 && ltp > 0) {
+          plPct = Math.round(((ltp - avg) / avg) * 10000) / 100
+        }
+
+        // ISIN-based sector/category detection for ETFs
+        // ETF ISINs from ICICIDirect: INF prefix = MF/ETF, INE prefix = equity
+        const isin = isinIdx !== -1 ? (row[isinIdx]||'').trim() : ''
+        const isEtf = isin.startsWith('INF') || name.toUpperCase().includes('ETF') ||
+                      name.toUpperCase().includes('BEES') || name.toUpperCase().includes('INDEX') ||
+                      name.toUpperCase().includes('NIFTY') || name.toUpperCase().includes('FUND OF FUND')
+        const isGoldEtf = isEtf && (name.toUpperCase().includes('GOLD') || name.toUpperCase().includes('SILVER') || name.toUpperCase().includes('GOLDBEES'))
+
+        // Category: use ISIN-based ETF detection first, then sector text
+        let itemCat
+        if (isMF) {
+          itemCat = mfCategory(sector)
+        } else if (isGoldEtf) {
+          itemCat = 'Gold & Precious Metals'
+        } else if (isEtf) {
+          // Non-gold ETF (Pharma ETF, Nifty ETF, Smallcap ETF etc.) → Stocks & Equities
+          itemCat = 'Stocks & Equities'
+        } else {
+          itemCat = equityCategory(sector)
+        }
+
+        // Sector: use file's sector col if present, else detect from company name/ISIN
+        const detectedSector = !sector && !isEtf ? detectSectorFromName(name) : ''
+        const autoSector = sector
+          ? sector.charAt(0).toUpperCase() + sector.slice(1).toLowerCase()
+          : isGoldEtf ? 'Gold ETF'
+          : isEtf ? 'Index / ETF'
+          : detectedSector
+
+        return {
+          id:             'import_' + Date.now() + '_' + i,
+          name,
+          value,
+          category:       itemCat,
+          institution,
+          note:           autoSector,
+          _sector:        autoSector,
+          _qty:           qty,
+          _avgPrice:      avg,
+          _ltp:           ltp,
+          _investedValue: investedVal,
+          _plPct:         plPct,
+          _isMF:          isMF,
+        }
+      })
+      .filter(r => r.name.length > 1 && !/^[\d.,₹$%\s\-]+$/.test(r.name))
+  }
+
   const processFile = async (file) => {
     setError('')
     const ext = file.name.split('.').pop().toLowerCase()
-    if (!['csv', 'txt', 'xls', 'xlsx'].includes(ext)) {
+    if (!['csv','txt','xls','xlsx'].includes(ext)) {
       setError('Unsupported file type. Please upload a .csv, .xls, or .xlsx file.')
       return
     }
 
     try {
-      const rows = await parseFileToRows(file)
-      if (rows.length < 1) { setError('File appears to be empty.'); return }
+      const sheets = await parseFileToRows(file)
+      const cfg    = BROKERS[broker]
+      let   allItems = []
 
-      const cfg = BROKERS[broker]
+      // ── Process each sheet ──────────────────────────────────────────────
+      const sheetNames = Object.keys(sheets)
 
-      // ── Strategy 1: Standard table (header row + data rows) ──────────────
-      const detected = detectHeaderRow(rows, cfg.columns)
-      if (detected) {
-        const { headerRowIdx, headers } = detected
-        const nameIdx    = findCol(headers, cfg.columns.name)
-        const valIdx     = cfg.columns.value    ? findCol(headers, cfg.columns.value)    : -1
-        const qtyIdx     = cfg.columns.qty      ? findCol(headers, cfg.columns.qty)      : -1
-        const ltpIdx     = cfg.columns.ltp      ? findCol(headers, cfg.columns.ltp)      : -1
-        const avgPriceIdx= cfg.columns.avgPrice ? findCol(headers, cfg.columns.avgPrice) : -1
-        const sectorIdx  = findCol(headers, ['sector','industry','category','asset class'])
+      for (const sheetName of sheetNames) {
+        const rows    = sheets[sheetName]
+        const nameLow = sheetName.toLowerCase()
 
-        // Sector → WealthRadar category mapping for Zerodha
-        const sectorToCategory = (sector) => {
-          if (!sector) return cfg.category || ASSET_CATS[0]
-          const s = sector.toLowerCase()
-          if (s.includes('etf'))                                          return 'Gold & Precious Metals'
-          if (s.includes('gold'))                                         return 'Gold & Precious Metals'
-          if (s.includes('financial') || s.includes('bank'))             return 'Stocks & Equities'
-          if (s.includes('software') || s.includes('tech'))              return 'Stocks & Equities'
-          if (s.includes('healthcare') || s.includes('pharma'))          return 'Stocks & Equities'
-          if (s.includes('metal'))                                        return 'Stocks & Equities'
-          if (s.includes('fmcg') || s.includes('consumer'))              return 'Stocks & Equities'
-          if (s.includes('auto'))                                         return 'Stocks & Equities'
-          return cfg.category || ASSET_CATS[0]
+        // Detect sheet type from sheet name
+        const isMF       = nameLow.includes('mutual') || nameLow.includes('fund')
+        const isEquity   = nameLow.includes('equity') || nameLow.includes('stock')
+        const isCombined = nameLow.includes('combined')
+        const isCSV      = nameLow === '_csv'   // single-sheet CSV files
+        // Generic holdings sheet names used by various brokers
+        const isHoldings = nameLow.includes('holding') || nameLow.includes('portfolio') ||
+                           nameLow.includes('report') || nameLow.includes('position')
+
+        // Skip combined sheet if individual equity/MF sheets already exist
+        if (isCombined && sheetNames.some(n => n.toLowerCase().includes('equity'))) continue
+
+        // For single-sheet files (CSV, or xlsx with a generic sheet name like "Holdings report")
+        // use broker config to determine MF vs equity
+        const brokerIsMF = cfg.category === 'Mutual Funds'
+        const effectiveIsMF = isMF || (isCSV && brokerIsMF) ||
+                              (isHoldings && !isEquity && brokerIsMF) ||
+                              (!isEquity && !isMF && !isCombined && !isCSV && !isHoldings && brokerIsMF)
+
+        // Skip sheets that are clearly NOT holdings data
+        // Accept: equity, stock, mutual, fund, combined, holdings, portfolio, report, position, csv
+        if (!isMF && !isEquity && !isCombined && !isCSV && !isHoldings) continue
+
+        const sheetCfg = {
+          institution: cfg.institution || broker,
+          category:    effectiveIsMF ? 'Mutual Funds' : 'Stocks & Equities',
+          isMF:        effectiveIsMF,
         }
 
-        if (nameIdx !== -1) {
-          const items = rows.slice(headerRowIdx + 1)
-            .map((row, i) => {
-              const name   = (row[nameIdx] || '').toString().trim()
-              const qty    = qtyIdx     !== -1 ? parseValue((row[qtyIdx]      || '').toString()) : 1
-              const ltp    = ltpIdx     !== -1 ? parseValue((row[ltpIdx]      || '').toString()) : 0
-              const avg    = avgPriceIdx !== -1 ? parseValue((row[avgPriceIdx] || '').toString()) : 0
-
-              // Value priority: direct value col → qty×ltp → qty×avgPrice → 0
-              let value = 0
-              if (valIdx !== -1 && parseValue((row[valIdx] || '').toString()) > 0) {
-                value = parseValue((row[valIdx] || '').toString())
-              } else if (qty > 0 && ltp > 0) {
-                value = Math.round(qty * ltp * 100) / 100   // qty × current/closing price
-              } else if (qty > 0 && avg > 0) {
-                value = Math.round(qty * avg * 100) / 100   // fallback: qty × avg price
-              }
-
-              const sector   = sectorIdx !== -1 ? (row[sectorIdx] || '').toString().trim() : ''
-              const category = sectorToCategory(sector)
-
-              const investedVal = qty > 0 && avg > 0 ? Math.round(qty * avg * 100) / 100 : 0
-              const plPct       = avgPriceIdx !== -1 && avg > 0 && ltp > 0
-                                    ? Math.round(((ltp - avg) / avg) * 10000) / 100
-                                    : null
-
-              return {
-                id:          'import_' + Date.now() + '_' + i,
-                name,
-                value,
-                category,
-                institution: cfg.institution || '',
-                note:        sector
-                  ? sector.charAt(0) + sector.slice(1).toLowerCase() + ' · Imported from ' + cfg.label
-                  : 'Imported from ' + cfg.label,
-                // Extra fields for rich preview (not stored in main asset model)
-                _sector:        sector,
-                _qty:           qty,
-                _avgPrice:      avg,
-                _ltp:           ltp,
-                _investedValue: investedVal,
-                _plPct:         plPct,
-              }
-            })
-            .filter(r => r.name.length > 1 && !/^[\d.,₹$%\s\-]+$/.test(r.name))
-
-          if (items.length > 0) {
-            const sel = {}
-            items.forEach(item => { sel[item.id] = true })
-            setParsed(items); setSelected(sel); setStep('preview')
-            return
-          }
-        }
+        const items = parseSheetRows(rows, sheetCfg)
+        allItems = [...allItems, ...items]
       }
 
-      // ── Strategy 2: Key-Value layout (col A = label, col B = number) ────
-      // e.g. "Invested Value | 1291878.43"  each row is one metric
-      const isKeyValue = rows.slice(0, 10).filter(r => r.length >= 2).every(r => {
-        const second = (r[1] || '').toString().trim()
-        return second === '' || /^[\d.,₹$%\s\-]+$/.test(second)
-      })
-
-      if (isKeyValue && rows.length >= 2) {
-        const items = rows
-          .filter(r => r.length >= 2)
-          .map((row, i) => ({
-            id:          'import_' + Date.now() + '_' + i,
-            name:        (row[0] || '').toString().trim(),
-            value:       parseValue((row[1] || '').toString()),
-            category:    cfg.category || ASSET_CATS[0],
-            institution: cfg.institution || '',
-            note:        'Imported from ' + cfg.label,
-          }))
-          .filter(r => r.name.length > 1 && !/^[\d.,₹$%\s\-]+$/.test(r.name) && r.value > 0)
-
-        if (items.length > 0) {
-          const sel = {}
-          items.forEach(item => { sel[item.id] = true })
-          setParsed(items); setSelected(sel); setStep('preview')
-          return
-        }
+      if (allItems.length === 0) {
+        setError(
+          'Could not find any holdings in this file.\n\n' +
+          '💡 Tips:\n' +
+          '• For Zerodha: download from Console → Portfolio → Holdings\n' +
+          '• Try "Generic CSV/Excel" if your broker isn\'t listed'
+        )
+        return
       }
 
-      // ── Strategy 3: Single-column (just names, no values) ────────────────
-      const nameOnlyCandidates = [...cfg.columns.name, 'name', 'fund', 'stock', 'instrument', 'scheme']
-      const detectedNameOnly = detectHeaderRow(rows, { name: nameOnlyCandidates, value: [] })
-      if (detectedNameOnly) {
-        const nameIdx = findCol(detectedNameOnly.headers, nameOnlyCandidates)
-        if (nameIdx !== -1) {
-          const items = rows.slice(detectedNameOnly.headerRowIdx + 1)
-            .map((row, i) => ({
-              id:          'import_' + Date.now() + '_' + i,
-              name:        (row[nameIdx] || '').toString().trim() || ('Item ' + (i + 1)),
-              value:       0,
-              category:    cfg.category || ASSET_CATS[0],
-              institution: cfg.institution || '',
-              note:        'Imported from ' + cfg.label + ' (value not detected — please set manually)',
-            }))
-            .filter(r => r.name.length > 1)
+      const sel = {}
+      allItems.forEach(item => { sel[item.id] = true })
+      setParsed(allItems)
+      setSelected(sel)
+      setStep('preview')
 
-          if (items.length > 0) {
-            const sel = {}
-            items.forEach(item => { sel[item.id] = true })
-            setParsed(items); setSelected(sel); setStep('preview')
-            return
-          }
-        }
-      }
-
-      // ── Nothing worked — show a helpful error with file preview ──────────
-      const preview = rows.slice(0, 4)
-        .map(r => r.slice(0, 5).map(c => (c || '').toString().trim()).join(' | '))
-        .filter(Boolean)
-        .join('\n')
-
-      setError(
-        'Could not parse this file automatically.\n\n' +
-        'File preview (first 4 rows):\n' + preview + '\n\n' +
-        '💡 What to try:\n' +
-        '• Select "Generic CSV/Excel" as the source\n' +
-        '• For Zerodha: download from Console → Portfolio → Holdings (not Tax P&L)\n' +
-        '• For MF: download from MF Central → My Portfolio → Export\n' +
-        '• Or use "Add Manually" below to enter values one by one'
-      )
     } catch (err) {
       setError('Could not parse file: ' + (err.message || 'Unknown error'))
     }
@@ -464,15 +647,39 @@ export default function ImportModal({ onClose, onImported }) {
 
   // ── Confirm import ───────────────────────────────────────────────────────
   const confirmImport = () => {
-    const toImport = parsed
+    const existing = financeData?.assets || []
+
+    let added = 0, updated = 0
+
+    parsed
       .filter(item => selected[item.id])
-      .map(item => ({
-        ...item,
-        id:       uid(),
-        category: overridesCat[item.id] || item.category,
-      }))
-    toImport.forEach(item => addItem('assets', item))
-    onImported(toImport.length)
+      .forEach(item => {
+        const clean = {
+          ...item,
+          category: overridesCat[item.id] || item.category,
+        }
+
+        // Match by name + institution (case-insensitive) to detect duplicates
+        const nameLower = (clean.name || '').toLowerCase().trim()
+        const instLower = (clean.institution || '').toLowerCase().trim()
+        const duplicate = existing.find(e =>
+          (e.name  || '').toLowerCase().trim() === nameLower &&
+          (e.institution || '').toLowerCase().trim() === instLower
+        )
+
+        if (duplicate) {
+          // Update existing record — preserve the original id
+          updateItem('assets', { ...clean, id: duplicate.id })
+          updated++
+        } else {
+          // New holding — assign fresh id
+          addItem('assets', { ...clean, id: uid() })
+          added++
+        }
+      })
+
+    setImportCounts({ added, updated })
+    onImported(added + updated, added, updated)
     setStep('done')
   }
 
@@ -653,8 +860,21 @@ export default function ImportModal({ onClose, onImported }) {
     return (
     <Modal title="Review & Import" onClose={onClose} wide>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16, flexWrap:'wrap', gap:10 }}>
-        <div style={{ fontSize:13, color:'#8892b0' }}>
-          <span style={{ color:'#16a34a', fontWeight:500 }}>{selectedCount}</span> of {parsed.length} rows selected
+        <div style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+          <div style={{ fontSize:13, color:'#8892b0' }}>
+            <span style={{ color:'#16a34a', fontWeight:500 }}>{selectedCount}</span> of {parsed.length} selected
+          </div>
+          {/* Sheet breakdown badges */}
+          {parsed.some(p => !p._isMF) && (
+            <span style={{ fontSize:11, background:'rgba(37,99,235,0.08)', border:'1px solid rgba(37,99,235,0.2)', color:'#2563eb', padding:'2px 10px', borderRadius:20, fontWeight:500 }}>
+              📈 {parsed.filter(p => !p._isMF).length} Stocks
+            </span>
+          )}
+          {parsed.some(p => p._isMF) && (
+            <span style={{ fontSize:11, background:'rgba(124,58,237,0.08)', border:'1px solid rgba(124,58,237,0.2)', color:'#7c3aed', padding:'2px 10px', borderRadius:20, fontWeight:500 }}>
+              🏦 {parsed.filter(p => p._isMF).length} Mutual Funds
+            </span>
+          )}
         </div>
         <div style={{ display:'flex', gap:8 }}>
           <button className="btn btn-ghost btn-sm" onClick={() => toggleAll(true)}>Select All</button>
@@ -662,14 +882,28 @@ export default function ImportModal({ onClose, onImported }) {
         </div>
       </div>
 
+      {/* Info banner when some holdings are missing present value */}
+      {parsed.some(p => p.value <= 0) && (
+        <div style={{ marginBottom:12, padding:'10px 14px', background:'rgba(200,146,10,0.07)', border:'1px solid rgba(200,146,10,0.25)', borderRadius:9, display:'flex', alignItems:'flex-start', gap:10 }}>
+          <span style={{ fontSize:16, flexShrink:0 }}>💡</span>
+          <div style={{ fontSize:12, color:'#92700a', lineHeight:1.6 }}>
+            <strong>{parsed.filter(p => p.value <= 0).length} holding{parsed.filter(p=>p.value<=0).length>1?'s':''}</strong> {parsed.filter(p=>p.value<=0).length>1?'are':'is'} missing the current market value.
+            Enter the present value manually in the <strong>PRESENT (₹)</strong> column — P&L% will update automatically.
+          </div>
+        </div>
+      )}
+
       <div style={{ overflowX:'auto', maxHeight:420, marginBottom:20, borderRadius:10, border:'1px solid #eef0f8' }}>
         <table style={{ width:'100%', borderCollapse:'collapse', minWidth: hasRichData ? 820 : 480 }}>
           <thead style={{ position:'sticky', top:0, zIndex:2 }}>
             <tr style={{ background:'#fafbfe' }}>
               <th style={{ padding:'10px 12px', textAlign:'left',  fontSize:11, color:'#8892b0', borderBottom:'1px solid #eef0f8', width:32, whiteSpace:'nowrap' }}></th>
-              <th style={{ padding:'10px 12px', textAlign:'left',  fontSize:11, color:'#8892b0', borderBottom:'1px solid #eef0f8', whiteSpace:'nowrap' }}>SYMBOL</th>
+              <th style={{ padding:'10px 12px', textAlign:'left',  fontSize:11, color:'#8892b0', borderBottom:'1px solid #eef0f8', whiteSpace:'nowrap' }}>TYPE</th>
+              <th style={{ padding:'10px 12px', textAlign:'left',  fontSize:11, color:'#8892b0', borderBottom:'1px solid #eef0f8', whiteSpace:'nowrap' }}>NAME</th>
               {hasRichData && <th style={{ padding:'10px 12px', textAlign:'left',  fontSize:11, color:'#8892b0', borderBottom:'1px solid #eef0f8', whiteSpace:'nowrap' }}>SECTOR</th>}
-              {hasRichData && <th style={{ padding:'10px 12px', textAlign:'right', fontSize:11, color:'#8892b0', borderBottom:'1px solid #eef0f8', whiteSpace:'nowrap' }}>QTY</th>}
+              {hasRichData && <th style={{ padding:'10px 12px', textAlign:'right', fontSize:11, color:'#8892b0', borderBottom:'1px solid #eef0f8', whiteSpace:'nowrap' }}>
+                {parsed.some(p => p._isMF) && parsed.some(p => !p._isMF) ? 'QTY / UNITS' : parsed.some(p => p._isMF) ? 'UNITS' : 'QTY'}
+              </th>}
               <th style={{ padding:'10px 12px', textAlign:'left',  fontSize:11, color:'#8892b0', borderBottom:'1px solid #eef0f8', whiteSpace:'nowrap' }}>CATEGORY</th>
               {hasRichData && <th style={{ padding:'10px 12px', textAlign:'right', fontSize:11, color:'#8892b0', borderBottom:'1px solid #eef0f8', whiteSpace:'nowrap' }}>INVESTED (₹)</th>}
               <th style={{ padding:'10px 12px', textAlign:'right', fontSize:11, color:'#8892b0', borderBottom:'1px solid #eef0f8', whiteSpace:'nowrap' }}>PRESENT (₹)</th>
@@ -689,8 +923,15 @@ export default function ImportModal({ onClose, onImported }) {
                     style={{ accentColor:'#c8953a', width:14, height:14, cursor:'pointer' }} />
                 </td>
 
-                {/* Symbol + institution */}
-                <td style={{ padding:'9px 12px', borderBottom:'1px solid #f4f5fb', fontSize:13, color:'#1a1d2e', whiteSpace:'nowrap' }}>
+                {/* Type badge */}
+                <td style={{ padding:'9px 12px', borderBottom:'1px solid #f4f5fb', whiteSpace:'nowrap' }}>
+                  {item._isMF
+                    ? <span style={{ fontSize:10, background:'rgba(124,58,237,0.08)', border:'1px solid rgba(124,58,237,0.2)', color:'#7c3aed', padding:'2px 8px', borderRadius:10, fontWeight:500 }}>MF</span>
+                    : <span style={{ fontSize:10, background:'rgba(37,99,235,0.08)', border:'1px solid rgba(37,99,235,0.2)', color:'#2563eb', padding:'2px 8px', borderRadius:10, fontWeight:500 }}>EQ</span>
+                  }
+                </td>
+                {/* Name + institution */}
+                <td style={{ padding:'9px 12px', borderBottom:'1px solid #f4f5fb', fontSize:13, color:'#1a1d2e' }}>
                   <div style={{ fontWeight:500 }}>{item.name}</div>
                   {item.institution && <div style={{ fontSize:10, color:'#b0b8d0', marginTop:1 }}>{item.institution}</div>}
                 </td>
@@ -699,7 +940,7 @@ export default function ImportModal({ onClose, onImported }) {
                 {hasRichData && (
                   <td style={{ padding:'9px 12px', borderBottom:'1px solid #f4f5fb', fontSize:11, color:'#6b7494', whiteSpace:'nowrap', maxWidth:140, overflow:'hidden', textOverflow:'ellipsis' }}>
                     {item._sector
-                      ? item._sector.charAt(0) + item._sector.slice(1).toLowerCase()
+                      ? item._sector.charAt(0).toUpperCase() + item._sector.slice(1).toLowerCase()
                       : <span style={{ color:'#d0d4e0' }}>—</span>}
                   </td>
                 )}
@@ -730,17 +971,43 @@ export default function ImportModal({ onClose, onImported }) {
                   </td>
                 )}
 
-                {/* Present value */}
-                <td style={{ padding:'9px 12px', borderBottom:'1px solid #f4f5fb', textAlign:'right', fontFamily:"'JetBrains Mono',monospace", fontSize:13, whiteSpace:'nowrap' }}>
-                  {item.value > 0
-                    ? <span style={{ color:'#16a34a', fontWeight:500 }}>₹{item.value.toLocaleString('en-IN', { maximumFractionDigits:0 })}</span>
-                    : (
+                {/* Present value — always editable inline */}
+                <td style={{ padding:'6px 12px', borderBottom:'1px solid #f4f5fb', textAlign:'right', whiteSpace:'nowrap' }}>
+                  <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:2 }}>
+                    <div style={{ position:'relative', display:'flex', alignItems:'center' }}>
+                      <span style={{ position:'absolute', left:8, fontSize:11, color: item.value > 0 ? '#16a34a' : '#c8920a', pointerEvents:'none', fontFamily:"'JetBrains Mono',monospace" }}>₹</span>
                       <input
-                        type="number" placeholder="Enter value"
-                        style={{ background:'#f5f6fa', border:'1px solid #c8953a', borderRadius:6, color:'#1a1d2e', fontSize:12, padding:'3px 8px', width:90, fontFamily:"'JetBrains Mono',monospace", textAlign:'right' }}
-                        onChange={e => setParsed(prev => prev.map(p => p.id === item.id ? { ...p, value: parseFloat(e.target.value) || 0 } : p))}
+                        type="number"
+                        value={item.value > 0 ? item.value : ''}
+                        placeholder="Enter present value"
+                        style={{
+                          background: item.value > 0 ? 'rgba(22,163,74,0.05)' : 'rgba(200,146,10,0.06)',
+                          border: `1px solid ${item.value > 0 ? 'rgba(22,163,74,0.25)' : '#c8920a'}`,
+                          borderRadius: 6, color:'#1a1d2e', fontSize:12,
+                          padding:'4px 8px 4px 20px', width:110,
+                          fontFamily:"'JetBrains Mono',monospace", textAlign:'right',
+                          outline:'none', transition:'border-color 0.15s',
+                        }}
+                        onFocus={e => e.target.style.borderColor = '#c8920a'}
+                        onBlur={e => e.target.style.borderColor = item.value > 0 ? 'rgba(22,163,74,0.25)' : '#c8920a'}
+                        onChange={e => {
+                          const newVal = parseFloat(e.target.value) || 0
+                          setParsed(prev => prev.map(p => {
+                            if (p.id !== item.id) return p
+                            // Recalculate P&L% live when present value is edited
+                            const inv    = p._investedValue || 0
+                            const newPct = inv > 0 && newVal > 0
+                              ? Math.round(((newVal - inv) / inv) * 10000) / 100
+                              : null
+                            return { ...p, value: newVal, _plPct: newPct }
+                          }))
+                        }}
                       />
+                    </div>
+                    {item.value <= 0 && (
+                      <span style={{ fontSize:9, color:'#c8920a', letterSpacing:'0.04em' }}>REQUIRED</span>
                     )}
+                  </div>
                 </td>
 
                 {/* P&L % */}
@@ -773,7 +1040,7 @@ export default function ImportModal({ onClose, onImported }) {
             return (
             <tfoot>
               <tr style={{ background:'#f0f2f9', borderTop:'2px solid #dde0ee' }}>
-                <td colSpan={2} style={{ padding:'11px 12px', fontSize:12, fontWeight:700, color:'#1a1d2e' }}>
+                <td colSpan={3} style={{ padding:'11px 12px', fontSize:12, fontWeight:700, color:'#1a1d2e' }}>
                   TOTAL ({selectedCount} stocks)
                 </td>
                 {/* Sector col — blank */}
@@ -832,9 +1099,19 @@ export default function ImportModal({ onClose, onImported }) {
         </div>
         <div style={{ display:'flex', gap:10 }}>
           <button className="btn btn-outline" onClick={() => setStep('upload')}>← Re-upload</button>
-          <button className="btn btn-gold" onClick={confirmImport} disabled={selectedCount === 0}>
-            Import {selectedCount} {selectedCount === 1 ? 'Asset' : 'Assets'} →
-          </button>
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4 }}>
+            {(() => {
+              const missingVal = parsed.filter(p => selected[p.id] && p.value <= 0).length
+              return missingVal > 0 ? (
+                <span style={{ fontSize:11, color:'#c8920a' }}>
+                  ⚠ {missingVal} holding{missingVal>1?'s':''} still missing present value
+                </span>
+              ) : null
+            })()}
+            <button className="btn btn-gold" onClick={confirmImport} disabled={selectedCount === 0}>
+              Import {selectedCount} {selectedCount === 1 ? 'Asset' : 'Assets'} →
+            </button>
+          </div>
         </div>
       </div>
     </Modal>
@@ -845,12 +1122,28 @@ export default function ImportModal({ onClose, onImported }) {
   return (
     <Modal title="Import Complete! 🎉" onClose={onClose}>
       <div style={{ textAlign:'center', padding:'20px 0' }}>
-        <div style={{ fontSize:56, marginBottom:16 }}>✅</div>
-        <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:24, color:'#16a34a', marginBottom:8 }}>
-          Assets Imported Successfully
+        <div style={{ fontSize:52, marginBottom:16 }}>✅</div>
+        <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:24, color:'#1a1d2e', marginBottom:16 }}>
+          Holdings Updated
         </div>
-        <div style={{ fontSize:13, color:'#8892b0', marginBottom:28 }}>
-          Your holdings are now visible in the Assets tab.
+        <div style={{ display:'flex', justifyContent:'center', gap:16, marginBottom:24, flexWrap:'wrap' }}>
+          {importCounts.added > 0 && (
+            <div style={{ padding:'12px 24px', background:'rgba(22,163,74,0.08)', border:'1px solid rgba(22,163,74,0.2)', borderRadius:12 }}>
+              <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:28, fontWeight:700, color:'#16a34a' }}>{importCounts.added}</div>
+              <div style={{ fontSize:12, color:'#16a34a', marginTop:4 }}>New holdings added</div>
+            </div>
+          )}
+          {importCounts.updated > 0 && (
+            <div style={{ padding:'12px 24px', background:'rgba(37,99,235,0.07)', border:'1px solid rgba(37,99,235,0.18)', borderRadius:12 }}>
+              <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:28, fontWeight:700, color:'#2563eb' }}>{importCounts.updated}</div>
+              <div style={{ fontSize:12, color:'#2563eb', marginTop:4 }}>Existing holdings updated</div>
+            </div>
+          )}
+        </div>
+        <div style={{ fontSize:13, color:'#8892b0', marginBottom:24, lineHeight:1.6 }}>
+          {importCounts.updated > 0 && importCounts.added === 0
+            ? 'All holdings were already in your portfolio — values refreshed with latest prices.'
+            : 'Your holdings are now visible in the Assets tab.'}
         </div>
         <button className="btn btn-gold" style={{ width:'100%', justifyContent:'center', padding:12 }} onClick={onClose}>
           View My Assets

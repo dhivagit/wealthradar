@@ -13,8 +13,8 @@ export const CURRENCIES = [
 
 // ─── Category Lists ───────────────────────────────────────────────────────────
 export const ASSET_CATS = [
-  'Cash & Equivalents', 'Fixed Deposits', 'Mutual Funds',
-  'Stocks & Equities', 'PPF / EPF', 'NPS', 'Real Estate',
+  'Cash & Equivalents', 'Fixed Deposits', 'Bonds & Debentures', 'Mutual Funds',
+  'Stocks & Equities', 'PPF / EPF', 'SSA (Sukanya Samriddhi)', 'NPS', 'Real Estate',
   'Gold & Precious Metals', 'Cryptocurrency', 'Vehicles',
   'Business Assets', 'Others',
 ]
@@ -39,7 +39,27 @@ export const EXPENSE_CATS = [
 export const PALETTE = [
   '#c8953a', '#3ecf8e', '#5b8ff9', '#f06a6a', '#f09b46',
   '#9b8ff9', '#e8c060', '#56d8c8', '#e87070', '#88d060',
+  '#d97706', '#06b6d4', '#8b5cf6', '#10b981', '#f43f5e',
 ]
+
+// Consistent category → colour mapping so same category always same colour
+export const CAT_COLORS = {
+  'Stocks & Equities':     '#5b8ff9',
+  'Mutual Funds':          '#9b8ff9',
+  'Gold & Precious Metals':'#c8953a',
+  'Fixed Deposits':        '#3ecf8e',
+  'Cash & Equivalents':    '#56d8c8',
+  'Real Estate':           '#f09b46',
+  'PPF / EPF':             '#88d060',
+  'SSA (Sukanya Samriddhi)':'#ec4899',
+  'NPS':                   '#06b6d4',
+  'Fixed Income & Bonds':  '#10b981',
+  'Bonds & Debentures':    '#10b981',
+  'Cryptocurrency':        '#f43f5e',
+  'Business Assets':       '#d97706',
+  'Vehicles':              '#8b5cf6',
+  'Others':                '#e8c060',
+}
 
 // ─── Navigation Tabs ─────────────────────────────────────────────────────────
 export const TABS = [
@@ -49,6 +69,8 @@ export const TABS = [
   { id: 'cashflow',    label: 'Cash Flow',   icon: '⇄' },
   { id: 'analytics',   label: 'Analytics',   icon: '◈' },
   { id: 'networth',    label: 'Net Worth',   icon: '◉' },
+  { id: 'profile',     label: 'Profile',     icon: '⊕' },
+  { id: 'taxharvest',  label: 'Tax Harvest', icon: '⚡' },
   { id: 'settings',    label: 'Settings',    icon: '⚙' },
 ]
 

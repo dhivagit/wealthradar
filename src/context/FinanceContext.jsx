@@ -45,6 +45,15 @@ export function FinanceProvider({ children }) {
     })
   }, [session])
 
+  // Batch replace entire collection at once (used for bulk fixes like sector casing)
+  const batchUpdateCollection = useCallback((collection, items) => {
+    setDataState(prev => {
+      const updated = { ...prev, [collection]: items }
+      if (session) DB.saveData(session.userId, updated)
+      return updated
+    })
+  }, [session])
+
   const deleteItem = useCallback((collection, id) => {
     setDataState(prev => {
       const updated = { ...prev, [collection]: prev[collection].filter(x => x.id !== id) }
@@ -106,7 +115,7 @@ export function FinanceProvider({ children }) {
     <FinanceContext.Provider value={{
       data, settings,
       persistData, persistSettings,
-      addItem, updateItem, deleteItem,
+      addItem, updateItem, deleteItem, batchUpdateCollection,
       takeSnapshot, exportJSON, exportCSV, importJSON, resetToSample,
     }}>
       {children}

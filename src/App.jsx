@@ -7,6 +7,8 @@ import AuthScreen                      from './components/AuthScreen'
 import LandingPage                     from './components/LandingPage'
 import ResetPasswordScreen             from './components/ResetPasswordScreen'
 import { Dashboard, Assets, Liabilities, CashFlow, Analytics, NetWorth, Settings } from './components/Tabs'
+import { FinancialProfile } from './components/FinancialProfile'
+import { TaxHarvest } from './components/TaxHarvest'
 import { TABS }                        from './utils/constants'
 import { formatCompact, formatCurrency } from './utils/helpers'
 
@@ -43,6 +45,8 @@ function Shell() {
     cashflow:    <CashFlow />,
     analytics:   <Analytics />,
     networth:    <NetWorth />,
+    profile:     <FinancialProfile />,
+    taxharvest:  <TaxHarvest />,
     settings:    <Settings onToast={toast} />,
   }
 

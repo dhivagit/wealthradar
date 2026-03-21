@@ -11,7 +11,7 @@ import { useTotals }   from '../hooks/useTotals'
 import { StatCard, ProgressBar, DataTable, DonutSVG, ChartTooltip, Notification } from './UI'
 import EntryModal      from './EntryModal'
 import ImportModal     from './ImportModal'
-import { PALETTE, MILESTONES } from '../utils/constants'
+import { PALETTE, CAT_COLORS, MILESTONES } from '../utils/constants'
 import { groupBy, formatCurrency, formatCompact } from '../utils/helpers'
 import { useAuth } from '../context/AuthContext'
 import { CURRENCIES } from '../utils/constants'
@@ -29,9 +29,10 @@ export function Dashboard() {
   const fmt  = v => formatCompact(v, cur)
 
   const assetGroups = groupBy(data.assets, 'category')
-  const assetPie    = Object.entries(assetGroups).map(([k, v], i) => ({
-    name: k, value: v.reduce((s, x) => s + x.value, 0), color: PALETTE[i % PALETTE.length],
-  }))
+  const assetPie    = Object.entries(assetGroups)
+    .map(([k, v]) => ({ name: k, value: v.reduce((s, x) => s + x.value, 0), color: CAT_COLORS[k] || PALETTE[Object.keys(assetGroups).indexOf(k) % PALETTE.length] }))
+    .filter(s => s.value > 0)
+    .sort((a, b) => b.value - a.value)
 
   return (
     <div style={{ display: 'grid', gap: 20 }}>
@@ -42,6 +43,57 @@ export function Dashboard() {
         <StatCard label="Total Liabilities"value={fmt(totalLiabilities)}  sub={`Debt ratio ${totals.debtRatio?.toFixed(1)}%`}        color="#f06a6a" icon="▽" delay={120} />
         <StatCard label="Monthly Cash Flow"value={fmt(cashFlow)}          sub={`${savingsRate?.toFixed(1)}% savings rate`}            color={cashFlow >= 0 ? '#3ecf8e' : '#f06a6a'} icon="⇄" delay={180} />
       </div>
+
+      {/* Portfolio P&L summary — only shown if any asset has invested value */}
+      {data.assets.some(a => a._investedValue > 0) && (() => {
+        const invested  = data.assets.reduce((s, a) => s + (a._investedValue || 0), 0)
+        const present   = data.assets.reduce((s, a) => s + (a._investedValue > 0 ? a.value : 0), 0)
+        const pl        = present - invested
+        const plPct     = invested > 0 ? (pl / invested) * 100 : 0
+        const plColor   = pl >= 0 ? '#16a34a' : '#dc2626'
+        const plBg      = pl >= 0 ? 'rgba(22,163,74,0.06)' : 'rgba(220,38,38,0.06)'
+        const plBorder  = pl >= 0 ? 'rgba(22,163,74,0.2)'  : 'rgba(220,38,38,0.2)'
+        const byType = [
+          { label: 'Stocks', items: data.assets.filter(a => !a._isMF && a._investedValue > 0) },
+          { label: 'Mutual Funds', items: data.assets.filter(a => a._isMF  && a._investedValue > 0) },
+        ].filter(t => t.items.length > 0).map(t => ({
+          ...t,
+          invested: t.items.reduce((s,a) => s + a._investedValue, 0),
+          present:  t.items.reduce((s,a) => s + a.value, 0),
+        })).map(t => ({ ...t, pl: t.present - t.invested, plPct: t.invested > 0 ? (t.present - t.invested) / t.invested * 100 : 0 }))
+
+        return (
+          <div style={{ background: plBg, border: `1px solid ${plBorder}`, borderRadius: 14, padding: '18px 24px', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:16 }}>
+            <div>
+              <div style={{ fontSize: 12, color: '#8892b0', marginBottom: 4, textTransform:'uppercase', letterSpacing:'0.06em' }}>Portfolio Gain / Loss</div>
+              <div style={{ display:'flex', alignItems:'baseline', gap:10 }}>
+                <span style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:28, fontWeight:700, color:plColor }}>
+                  {pl >= 0 ? '+' : ''}{fmt(pl)}
+                </span>
+                <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:14, fontWeight:600, color:plColor,
+                  background: pl >= 0 ? 'rgba(22,163,74,0.1)' : 'rgba(220,38,38,0.1)', padding:'2px 10px', borderRadius:20 }}>
+                  {plPct >= 0 ? '+' : ''}{plPct.toFixed(2)}%
+                </span>
+              </div>
+              <div style={{ fontSize:12, color:'#8892b0', marginTop:4 }}>Invested: {fmt(invested)} → Present: {fmt(present)}</div>
+            </div>
+            <div style={{ display:'flex', gap:20, flexWrap:'wrap' }}>
+              {byType.map(t => (
+                <div key={t.label} style={{ textAlign:'right' }}>
+                  <div style={{ fontSize:11, color:'#8892b0', marginBottom:4 }}>{t.label}</div>
+                  <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:13, fontWeight:600,
+                    color: t.plPct >= 0 ? '#16a34a' : '#dc2626' }}>
+                    {t.plPct >= 0 ? '+' : ''}{t.plPct.toFixed(2)}%
+                  </div>
+                  <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:11, color:'#8892b0' }}>
+                    {t.pl >= 0 ? '+' : ''}{fmt(t.pl)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Net Worth Trend */}
       <div className="card" style={{ padding: 24 }}>
@@ -79,7 +131,7 @@ export function Dashboard() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <DonutSVG segments={assetPie.filter(s => s.value > 0)} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              {assetPie.filter(s => s.value > 0).slice(0, 6).map(s => (
+              {assetPie.map(s => (
                 <div key={s.name} style={{ marginBottom: 10 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -150,6 +202,7 @@ export function Assets() {
     'Zerodha':'🟡','Groww':'🟢','MF Central':'🔵','Kuvera':'🟣',
     'NSDL/CDSL':'🏛️','EPFO':'🏢','SBI':'🏦','HDFC Bank':'🏦',
     'ICICI Bank':'🏦','Axis Bank':'🏦',
+    'ICICI Direct':'🔴','INDMoney':'🟠',
   }
 
   return (
@@ -209,12 +262,14 @@ export function Assets() {
         <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:20 }}>
           <span style={{ fontSize:12, color:'#8892b0', alignSelf:'center', marginRight:4 }}>Quick import:</span>
           {[
-            { label:'🟡 Zerodha',    broker:'zerodha' },
-            { label:'🟢 Groww',      broker:'groww' },
-            { label:'🔵 MF Central', broker:'mfcentral' },
-            { label:'🟣 Kuvera',     broker:'kuvera' },
-            { label:'🏛️ NSDL/CDSL',  broker:'nsdl' },
-            { label:'🏦 Bank',       broker:'bank' },
+            { label:'🟡 Zerodha',      broker:'zerodha' },
+            { label:'🟢 Groww',        broker:'groww' },
+            { label:'🔴 ICICI Direct', broker:'icicidirect' },
+            { label:'🟠 INDMoney',     broker:'indmoney' },
+            { label:'🔵 MF Central',   broker:'mfcentral' },
+            { label:'🟣 Kuvera',       broker:'kuvera' },
+            { label:'🏛️ NSDL/CDSL',    broker:'nsdl' },
+            { label:'🏦 Bank',         broker:'bank' },
           ].map(q => (
             <button key={q.broker}
               onClick={() => setImportModal(true)}
@@ -231,35 +286,124 @@ export function Assets() {
         </div>
       )}
 
-      {/* Asset groups */}
-      {Object.entries(groups).map(([cat, items]) => {
+      {/* Asset groups — ordered: Fixed Instruments → Gold → Mutual Funds → Stocks → Others */}
+      {(() => {
+        const CAT_ORDER = [
+          // Fixed Instruments first
+          'PPF / EPF', 'SSA (Sukanya Samriddhi)', 'NPS', 'Fixed Deposits',
+          'Bonds & Debentures', 'Cash & Equivalents',
+          // Then Gold
+          'Gold & Precious Metals',
+          // Then Mutual Funds
+          'Mutual Funds',
+          // Then Equities
+          'Stocks & Equities',
+          // Then everything else
+          'Real Estate', 'Cryptocurrency', 'Business Assets', 'Vehicles', 'Others',
+        ]
+        return Object.entries(groups).sort(([a], [b]) => {
+          const ai = CAT_ORDER.indexOf(a), bi = CAT_ORDER.indexOf(b)
+          if (ai === -1 && bi === -1) return a.localeCompare(b)
+          if (ai === -1) return 1
+          if (bi === -1) return -1
+          return ai - bi
+        })
+      })().map(([cat, items]) => {
         const catTotal = items.reduce((s, x) => s + x.value, 0)
         return (
           <div key={cat} className="card" style={{ marginBottom:16, overflow:'hidden' }}>
-            <div style={{ padding:'14px 20px', borderBottom:'1px solid #eef0f8', display:'flex', justifyContent:'space-between', alignItems:'center', background:'#f8f9fc' }}>
+            <div style={{ padding:'14px 20px', borderBottom:'1px solid #eef0f8', display:'flex', justifyContent:'space-between', alignItems:'center', background:'#f8f9fc', flexWrap:'wrap', gap:8 }}>
               <div style={{ display:'flex', alignItems:'center', gap:10 }}>
                 <span className="tag tag-asset">{cat}</span>
                 <span style={{ fontSize:12, color:'#8892b0' }}>{items.length} holding{items.length !== 1 ? 's' : ''}</span>
               </div>
-              <div style={{ display:'flex', alignItems:'center', gap:16 }}>
-                <span style={{ fontSize:12, color:'#8892b0' }}>{totalAssets > 0 ? ((catTotal/totalAssets)*100).toFixed(1) : 0}%</span>
-                <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:14, color:'#16a34a' }}>{fmt(catTotal)}</span>
+              <div style={{ display:'flex', alignItems:'center', gap:14, flexWrap:'wrap' }}>
+                {items.some(r => r._investedValue > 0) && (() => {
+                  const catInvested = items.reduce((s,r) => s + (r._investedValue||0), 0)
+                  const catPL       = catTotal - catInvested
+                  const catPLPct    = catInvested > 0 ? (catPL / catInvested) * 100 : null
+                  const plCol       = catPLPct >= 0 ? '#16a34a' : '#dc2626'
+                  return (
+                    <span style={{ display:'flex', alignItems:'center', gap:8 }}>
+                      <span style={{ fontSize:11, color:'#8892b0', fontFamily:"'JetBrains Mono',monospace" }}>inv: {fmt(catInvested)}</span>
+                      {catPLPct !== null && (
+                        <span style={{ fontSize:11, fontFamily:"'JetBrains Mono',monospace", fontWeight:600, color:plCol,
+                          background: catPLPct >= 0 ? 'rgba(22,163,74,0.09)' : 'rgba(220,38,38,0.08)',
+                          padding:'2px 9px', borderRadius:10 }}>
+                          {catPLPct >= 0 ? '+' : ''}{catPLPct.toFixed(1)}%
+                        </span>
+                      )}
+                    </span>
+                  )
+                })()}
+                <span style={{ fontSize:12, color:'#8892b0' }}>{totalAssets > 0 ? ((catTotal/totalAssets)*100).toFixed(1) : 0}% of portfolio</span>
+                <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:14, color:'#c8920a', fontWeight:600 }}>{fmt(catTotal)}</span>
               </div>
             </div>
             <DataTable currency={cur}
               cols={[
-                { key:'name', label:'Name' },
+                { key:'name',  label:'Name' },
+                // Fixed instruments → "Fixed Instrument" badge
+                // Mutual Funds → "Category" (shows MF sub-category like Large Cap, Hybrid etc.)
+                // Equities/others → "Sector"
+                ...((['PPF / EPF','SSA (Sukanya Samriddhi)','Fixed Deposits','Bonds & Debentures','Cash & Equivalents','Real Estate','Vehicles','Business Assets'].includes(cat))
+                  ? [{ key:'category', label:'Category', render: () => (
+                      <span style={{ fontSize:11, fontWeight:600, color:'#059669',
+                        background:'rgba(5,150,105,0.08)', padding:'2px 10px', borderRadius:20 }}>
+                        Fixed Instrument
+                      </span>
+                    )}]
+                  : cat === 'Mutual Funds'
+                  ? [{ key:'note', label:'Category', color:() => '#7c3aed' }]
+                  : [{ key:'note', label:'Sector',   color:() => '#6b7494' }]),
                 { key:'institution', label:'Source',
                   render: r => (
                     <span style={{ color:'#8892b0', fontSize:12 }}>
-                      {r.institution ? `${BROKER_ICONS[r.institution] || ''}  ${r.institution}` : '—'}
+                      {r.institution || '—'}
                     </span>
                   )},
-                { key:'value', label:'Value', right:true, mono:true,
-                  render:(r,c) => <span style={{ color:'#e8c060' }}>{formatCurrency(r.value, c)}</span> },
+                ...(items.some(r => r._qty > 0) ? [{
+                  key:'_qty', label: items.some(r => r._isMF) && items.some(r => !r._isMF) ? 'Qty/Units' : items.some(r => r._isMF) ? 'Units' : 'Qty',
+                  right:true,
+                  render: r => r._qty > 0
+                    ? <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:'#4a4f6a' }}>{Number(r._qty).toLocaleString()}</span>
+                    : <span style={{ color:'#d0d4e0' }}>—</span>
+                }] : []),
+                ...(items.some(r => r._investedValue > 0) ? [{
+                  key:'_investedValue', label:'Invested', right:true,
+                  render: (r,c) => r._investedValue > 0
+                    ? <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:'#8892b0' }}>{formatCurrency(r._investedValue, c)}</span>
+                    : <span style={{ color:'#d0d4e0' }}>—</span>
+                }] : []),
+                { key:'value', label:'Present Value', right:true, mono:true,
+                  render:(r,c) => <span style={{ color:'#c8920a', fontWeight:500 }}>{formatCurrency(r.value, c)}</span> },
+                ...(items.some(r => r._plPct !== undefined && r._plPct !== null) ? [{
+                  key:'_plPct', label:'P&L %', right:true,
+                  render: r => {
+                    const pct = r._plPct
+                    if (pct === undefined || pct === null) return <span style={{ color:'#d0d4e0' }}>—</span>
+                    const col    = pct >= 0 ? '#16a34a' : '#dc2626'
+                    const prefix = pct >= 0 ? '+' : ''
+                    const plAbs  = (r._investedValue > 0) ? (r.value - r._investedValue) : null
+                    return (
+                      <div style={{ textAlign:'right' }}>
+                        <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, fontWeight:600,
+                          color:col, background: pct >= 0 ? 'rgba(22,163,74,0.08)' : 'rgba(220,38,38,0.07)',
+                          padding:'2px 8px', borderRadius:10, display:'inline-block' }}>
+                          {prefix}{Number(pct).toFixed(2)}%
+                        </div>
+                        {plAbs !== null && (
+                          <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:10, color:col, marginTop:2, opacity:0.75 }}>
+                            {prefix}{formatCurrency(Math.abs(plAbs), 'INR')}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  }
+                }] : []),
                 { key:'alloc', label:'Allocation', right:true,
                   render: r => (
-                    <div style={{ minWidth:80 }}>
+                    <div style={{ minWidth:72 }}>
                       <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:3 }}>
                         <span style={{ fontSize:11, fontFamily:"'JetBrains Mono',monospace", color:'#8892b0' }}>
                           {totalAssets > 0 ? ((r.value/totalAssets)*100).toFixed(1) : 0}%
@@ -268,7 +412,6 @@ export function Assets() {
                       <ProgressBar pct={totalAssets > 0 ? (r.value/totalAssets)*100 : 0} color="#c8953a" height={3} />
                     </div>
                   )},
-                { key:'note', label:'Note', color:() => '#6b7494' },
               ]}
               rows={items}
               onEdit={item => setModal({ collection:'assets', item })}
@@ -283,10 +426,10 @@ export function Assets() {
       {importModal && (
         <ImportModal
           onClose={() => setImportModal(false)}
-          onImported={(count) => {
+          onImported={(total, added, updated) => {
             setImportModal(false)
-            setImportToast(count)
-            setTimeout(() => setImportToast(null), 3500)
+            setImportToast({ total, added, updated })
+            setTimeout(() => setImportToast(null), 4000)
           }}
         />
       )}
@@ -300,7 +443,12 @@ export function Assets() {
           animation:'notifSlide 0.3s ease',
         }}>
           <span style={{ color:'#16a34a', fontSize:18 }}>✓</span>
-          Successfully imported <strong style={{ color:'#16a34a' }}>{importToast} assets</strong>
+          {importToast?.updated > 0 && importToast?.added === 0
+            ? <>Updated <strong style={{ color:'#2563eb' }}>{importToast.updated} holdings</strong> with latest prices</>
+            : importToast?.updated > 0
+            ? <><strong style={{ color:'#16a34a' }}>{importToast.added} added</strong>, <strong style={{ color:'#2563eb' }}>{importToast.updated} updated</strong></>
+            : <>Imported <strong style={{ color:'#16a34a' }}>{importToast?.added || importToast?.total} new holdings</strong></>
+          }
         </div>
       )}
     </div>
@@ -493,12 +641,15 @@ export function Analytics() {
   const cur = settings.currency
   const fmts = v => formatCompact(v, cur)
   const fmt  = v => formatCurrency(v, cur)
+  const [activeSector, setActiveSector] = useState(null)   // drill-down: selected sector name
+  const [activeMcap,   setActiveMcap]   = useState(null)   // drill-down: selected market cap
 
   const { totalAssets, fiPct, fiNumber, monthlyInterest, avgNW, maxNW, savingsRate, debtRatio, emergencyMonths } = totals
 
-  const assetPie = Object.entries(groupBy(data?.assets || [], 'category')).map(([k, v], i) => ({
-    name: k, value: v.reduce((s, x) => s + x.value, 0), color: PALETTE[i % PALETTE.length], fill: PALETTE[i % PALETTE.length],
-  }))
+  const assetPie = Object.entries(groupBy(data?.assets || [], 'category'))
+    .map(([k, v]) => { const col = CAT_COLORS[k] || PALETTE[Object.keys(groupBy(data?.assets||[],'category')).indexOf(k) % PALETTE.length]; return { name: k, value: v.reduce((s, x) => s + x.value, 0), color: col, fill: col } })
+    .filter(s => s.value > 0)
+    .sort((a, b) => b.value - a.value)
 
   const healthMetrics = [
     { label: 'Savings Rate',     value: `${savingsRate?.toFixed(1)}%`,     pct: Math.min(savingsRate, 100),  color: '#16a34a', good: savingsRate >= 20,    bench: '≥ 20%' },
@@ -539,7 +690,7 @@ export function Analytics() {
           <h3 className="section-heading" style={{ marginBottom: 20 }}>Wealth Composition</h3>
           <ResponsiveContainer width="100%" height={220}>
             <RadialBarChart cx="50%" cy="50%" innerRadius="25%" outerRadius="85%"
-              data={assetPie.filter(s => s.value > 0).slice(0, 6)}>
+              data={assetPie}>
               <RadialBar dataKey="value" cornerRadius={4} />
               <Tooltip content={<ChartTooltip currency={cur} />} />
               <Legend wrapperStyle={{ fontSize: 11, color: '#8892b0' }} iconSize={8} />
@@ -570,9 +721,194 @@ export function Analytics() {
 
       {/* Top holdings + High interest debt */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        {/* Holdings P&L breakdown — only if imported data has P&L */}
+        {(data?.assets||[]).some(a => a._plPct !== null && a._plPct !== undefined) && (() => {
+          const richAssets = [...(data?.assets||[])].filter(a => a._plPct !== null && a._plPct !== undefined)
+          const topGainers = [...richAssets].sort((a,b) => (b._plPct||0) - (a._plPct||0)).slice(0, 5)
+          const topLosers  = [...richAssets].sort((a,b) => (a._plPct||0) - (b._plPct||0)).slice(0, 5)
+          return (
+            <div className="card" style={{ padding:24, gridColumn:'1 / -1' }}>
+              <h3 className="section-heading" style={{ marginBottom:20 }}>Holdings P&L Breakdown</h3>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:24 }}>
+                <div>
+                  <div style={{ fontSize:12, color:'#16a34a', fontWeight:600, marginBottom:12, display:'flex', alignItems:'center', gap:6 }}>
+                    <span style={{ background:'rgba(22,163,74,0.1)', borderRadius:6, padding:'2px 8px' }}>▲ Top Gainers</span>
+                  </div>
+                  {topGainers.map((a,i) => (
+                    <div key={a.id} style={{ marginBottom:10 }}>
+                      <div style={{ display:'flex', justifyContent:'space-between', marginBottom:3 }}>
+                        <span style={{ fontSize:12, color:'#1a1d2e', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:160 }}>{a.name}</span>
+                        <span style={{ fontSize:12, fontFamily:"'JetBrains Mono',monospace", fontWeight:600, color:'#16a34a', flexShrink:0 }}>
+                          +{Number(a._plPct).toFixed(2)}%
+                        </span>
+                      </div>
+                      <ProgressBar pct={Math.min(a._plPct, 200) / 2} color="#16a34a" height={4} />
+                    </div>
+                  ))}
+                </div>
+                <div>
+                  <div style={{ fontSize:12, color:'#dc2626', fontWeight:600, marginBottom:12, display:'flex', alignItems:'center', gap:6 }}>
+                    <span style={{ background:'rgba(220,38,38,0.08)', borderRadius:6, padding:'2px 8px' }}>▼ Biggest Losers</span>
+                  </div>
+                  {topLosers.map((a,i) => (
+                    <div key={a.id} style={{ marginBottom:10 }}>
+                      <div style={{ display:'flex', justifyContent:'space-between', marginBottom:3 }}>
+                        <span style={{ fontSize:12, color:'#1a1d2e', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:160 }}>{a.name}</span>
+                        <span style={{ fontSize:12, fontFamily:"'JetBrains Mono',monospace", fontWeight:600, color:'#dc2626', flexShrink:0 }}>
+                          {Number(a._plPct).toFixed(2)}%
+                        </span>
+                      </div>
+                      <ProgressBar pct={Math.min(Math.abs(a._plPct), 100)} color="#dc2626" height={4} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* ── Broker-wise Investment Summary ──────────────────────────── */}
+        {(data?.assets||[]).some(a => a.institution && a._investedValue > 0) && (() => {
+          // Fixed instrument categories — exclude from broker P&L chart (no meaningful P&L data)
+          const FIXED_CATS = new Set(['PPF / EPF','SSA (Sukanya Samriddhi)','Fixed Deposits','Bonds & Debentures','Cash & Equivalents','Real Estate','Vehicles','Business Assets','Others'])
+          // Group assets by broker/institution (equity + MF only)
+          const brokerMap = {}
+          ;(data?.assets||[])
+            .filter(a => !FIXED_CATS.has(a.category))
+            .forEach(a => {
+            const key = a.institution || 'Manual'
+            if (!brokerMap[key]) brokerMap[key] = { name:key, assets:[], invested:0, present:0 }
+            brokerMap[key].assets.push(a)
+            brokerMap[key].invested += (a._investedValue || 0)
+            brokerMap[key].present  += (a.value || 0)
+          })
+          const brokers = Object.values(brokerMap)
+            .map(b => ({ ...b, pl: b.present - b.invested, plPct: b.invested > 0 ? (b.present - b.invested) / b.invested * 100 : 0 }))
+            .sort((a, b) => b.present - a.present)
+
+          const totalInvested = brokers.reduce((s, b) => s + b.invested, 0)
+          const totalPresent  = brokers.reduce((s, b) => s + b.present, 0)
+          const totalPL       = totalPresent - totalInvested
+          const totalPLPct    = totalInvested > 0 ? totalPL / totalInvested * 100 : 0
+
+          const BROKER_COLORS = {
+            'Zerodha':'#c8920a','ICICI Direct':'#dc2626','Groww':'#16a34a',
+            'INDMoney':'#d97706','MF Central':'#2563eb','Kuvera':'#7c3aed',
+            'NSDL/CDSL':'#0891b2','EPFO':'#059669','Manual':'#8892b0',
+          }
+
+          return (
+            <div className="card" style={{ padding:24, gridColumn:'1 / -1' }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:20, flexWrap:'wrap', gap:12 }}>
+                <h3 className="section-heading">Broker-wise Summary</h3>
+                {/* Portfolio totals */}
+                <div style={{ display:'flex', gap:20, flexWrap:'wrap' }}>
+                  {[
+                    { label:'Total Invested', value:fmt(totalInvested), color:'#8892b0' },
+                    { label:'Present Value',  value:fmt(totalPresent),  color:'#c8920a' },
+                    { label:'Total P&L',      value:(totalPL>=0?'+':'')+fmt(totalPL), color:totalPL>=0?'#16a34a':'#dc2626' },
+                    { label:'Overall Return', value:(totalPLPct>=0?'+':'')+totalPLPct.toFixed(2)+'%', color:totalPLPct>=0?'#16a34a':'#dc2626' },
+                  ].map(s => (
+                    <div key={s.label} style={{ textAlign:'right' }}>
+                      <div style={{ fontSize:11, color:'#8892b0', marginBottom:2 }}>{s.label}</div>
+                      <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:13, fontWeight:600, color:s.color }}>{s.value}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Broker cards */}
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))', gap:14, marginBottom:24 }}>
+                {brokers.map(b => {
+                  const color   = BROKER_COLORS[b.name] || '#8892b0'
+                  const plColor = b.plPct >= 0 ? '#16a34a' : '#dc2626'
+                  const allocPct = totalPresent > 0 ? (b.present / totalPresent * 100) : 0
+                  const stocks  = b.assets.filter(a => !a._isMF).length
+                  const mfs     = b.assets.filter(a => a._isMF).length
+                  return (
+                    <div key={b.name} style={{ background:'#f8f9fc', border:'1px solid #eef0f8', borderRadius:12, padding:'16px 18px', borderLeft:`3px solid ${color}` }}>
+                      {/* Header */}
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
+                        <div>
+                          <div style={{ fontSize:14, fontWeight:600, color:'#1a1d2e' }}>{b.name}</div>
+                          <div style={{ fontSize:11, color:'#8892b0', marginTop:2 }}>
+                            {b.assets.length} holdings
+                            {stocks > 0 && <span style={{ marginLeft:6 }}>· {stocks} stocks</span>}
+                            {mfs   > 0 && <span style={{ marginLeft:6 }}>· {mfs} MFs</span>}
+                          </div>
+                        </div>
+                        <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, fontWeight:600,
+                          color:plColor, background: b.plPct>=0?'rgba(22,163,74,0.08)':'rgba(220,38,38,0.08)',
+                          padding:'3px 10px', borderRadius:20 }}>
+                          {b.plPct>=0?'+':''}{b.plPct.toFixed(2)}%
+                        </div>
+                      </div>
+
+                      {/* Invested vs Present */}
+                      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:12 }}>
+                        <div style={{ background:'#fff', borderRadius:8, padding:'8px 10px', border:'1px solid #eef0f8' }}>
+                          <div style={{ fontSize:10, color:'#8892b0', marginBottom:3 }}>INVESTED</div>
+                          <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:'#4a4f6a', fontWeight:500 }}>{fmt(b.invested)}</div>
+                        </div>
+                        <div style={{ background:'#fff', borderRadius:8, padding:'8px 10px', border:'1px solid #eef0f8' }}>
+                          <div style={{ fontSize:10, color:'#8892b0', marginBottom:3 }}>PRESENT</div>
+                          <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:'#c8920a', fontWeight:500 }}>{fmt(b.present)}</div>
+                        </div>
+                      </div>
+
+                      {/* P&L amount + allocation bar */}
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+                        <span style={{ fontSize:11, color:plColor, fontFamily:"'JetBrains Mono',monospace" }}>
+                          P&L: {b.pl>=0?'+':''}{fmt(b.pl)}
+                        </span>
+                        <span style={{ fontSize:11, color:'#8892b0' }}>{allocPct.toFixed(1)}% of portfolio</span>
+                      </div>
+                      {/* Allocation progress bar */}
+                      <div style={{ height:4, background:'#eef0f8', borderRadius:2, overflow:'hidden' }}>
+                        <div style={{ height:'100%', width:`${allocPct}%`, background:color, borderRadius:2, transition:'width 0.6s cubic-bezier(0.16,1,0.3,1)' }} />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Comparison bar chart — Invested vs Present per broker */}
+              <div>
+                <div style={{ fontSize:12, color:'#8892b0', marginBottom:12, fontWeight:500 }}>Invested vs Present Value by Broker</div>
+                {brokers.filter(b => b.invested > 0).map(b => {
+                  const color   = BROKER_COLORS[b.name] || '#8892b0'
+                  const maxVal  = Math.max(...brokers.map(x => x.present))
+                  const invPct  = maxVal > 0 ? (b.invested / maxVal * 100) : 0
+                  const prePct  = maxVal > 0 ? (b.present  / maxVal * 100) : 0
+                  const plColor = b.plPct >= 0 ? '#16a34a' : '#dc2626'
+                  return (
+                    <div key={b.name} style={{ marginBottom:14 }}>
+                      <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}>
+                        <span style={{ fontSize:12, color:'#1a1d2e', fontWeight:500 }}>{b.name}</span>
+                        <span style={{ fontSize:11, fontFamily:"'JetBrains Mono',monospace", color:plColor, fontWeight:600 }}>
+                          {b.plPct>=0?'+':''}{b.plPct.toFixed(2)}%  ({b.pl>=0?'+':''}{fmt(b.pl)})
+                        </span>
+                      </div>
+                      {/* Invested bar (grey) */}
+                      <div style={{ position:'relative', height:6, background:'#f0f1f8', borderRadius:3, marginBottom:3, overflow:'hidden' }}>
+                        <div style={{ position:'absolute', left:0, top:0, height:'100%', width:`${invPct}%`, background:'#d0d3e0', borderRadius:3 }} />
+                        <div style={{ position:'absolute', left:0, top:0, height:'100%', width:`${prePct}%`, background:color, borderRadius:3, opacity:0.8 }} />
+                      </div>
+                      <div style={{ display:'flex', gap:16, fontSize:10, color:'#9098b8' }}>
+                        <span>Inv: {fmt(b.invested)}</span>
+                        <span style={{ color:'#c8920a' }}>Now: {fmt(b.present)}</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })()}
+
         <div className="card" style={{ padding: 24 }}>
           <h3 className="section-heading" style={{ marginBottom: 16 }}>Top Asset Holdings</h3>
-          {[...( data?.assets || [])].sort((a, b) => b.value - a.value).slice(0, 6).map((a, i) => (
+          {[...( data?.assets || [])].sort((a, b) => b.value - a.value).slice(0, 8).map((a, i) => (
             <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
               <span style={{ fontSize: 11, fontFamily: "'JetBrains Mono',monospace", color: '#b0b8d0', width: 22 }}>#{i + 1}</span>
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -605,6 +941,963 @@ export function Analytics() {
           )}
         </div>
       </div>
+
+      {/* ── Sector-wise Allocation + Market Cap Charts ─────────────────────── */}
+      {(data?.assets||[]).some(a => (a._sector || a.note) && !a._isMF && a.category === 'Stocks & Equities') && (() => {
+
+        // Separate equity holdings from MF holdings
+        // Only true equity holdings — excludes MFs and all fixed/non-market categories
+        const EQUITY_ONLY_CATS = new Set(['Stocks & Equities','Gold & Precious Metals','Cryptocurrency','NPS'])  // SSA/PPF/FD excluded
+        const equityAssets = (data?.assets||[]).filter(a =>
+          !a._isMF && EQUITY_ONLY_CATS.has(a.category)
+        )
+        const mfAssets = (data?.assets||[]).filter(a => a._isMF)
+
+        // ── 1. Sector allocation (equity only) ─────────────────────────────
+        const sectorMap = {}
+        equityAssets.forEach(a => {
+          const raw = (a._sector || a.note || '').trim()
+          if (!raw) return
+          const key = raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase()
+          if (!sectorMap[key]) sectorMap[key] = { value: 0, invested: 0, count: 0 }
+          sectorMap[key].value    += (a.value || 0)
+          sectorMap[key].invested += (a._investedValue || 0)
+          sectorMap[key].count    += 1
+        })
+        const totalSectorVal = Object.values(sectorMap).reduce((s, v) => s + v.value, 0)
+        const sectorData = Object.entries(sectorMap)
+          .map(([name, d], i) => ({
+            name, value: d.value, invested: d.invested, count: d.count,
+            pct: totalSectorVal > 0 ? (d.value / totalSectorVal * 100) : 0,
+            color: PALETTE[i % PALETTE.length],
+          }))
+          .sort((a, b) => b.value - a.value)
+
+        // ── 2. Market cap classification ────────────────────────────────────
+        // Heuristic based on company name keywords — well-known large/mid/small caps
+        // ── Market Cap classification ────────────────────────────────────────
+        // Source: AMFI official list — 6 months ended 31 December 2025 (latest)
+        // https://www.amfiindia.com/Themes/Theme1/downloads/AverageMarketCapitalization31Dec2025.pdf
+        // SEBI Circular SEBI/HO/IMD/DF3/CIR/P/2017/114
+        // Large Cap = Ranks 1-100 | Mid Cap = 101-250 | Small Cap = 251+
+        // Lookup priority: ISIN → NSE symbol → company name keywords
+
+        // ── LARGE CAP: Ranks 1-100 (AMFI Dec 2025) ───────────────────────
+        const LARGE_CAP_ISINS = new Set([
+          'INE002A01018', // 1   Reliance Industries
+          'INE040A01034', // 2   HDFC Bank
+          'INE397D01024', // 3   Bharti Airtel
+          'INE467B01029', // 4   TCS
+          'INE090A01021', // 5   ICICI Bank
+          'INE062A01020', // 6   SBI
+          'INE009A01021', // 7   Infosys
+          'INE296A01032', // 8   Bajaj Finance
+          'INE0J1Y01017', // 9   LIC
+          'INE030A01027', // 10  Hindustan Unilever
+          'INE018A01030', // 11  L&T
+          'INE154A01025', // 12  ITC
+          'INE585B01010', // 13  Maruti Suzuki
+          'INE101A01026', // 14  M&M
+          'INE860A01027', // 15  HCL Technologies
+          'INE237A01028', // 16  Kotak Mahindra Bank
+          'INE044A01036', // 17  Sun Pharma
+          'INE238A01034', // 18  Axis Bank
+          'INE481G01011', // 19  UltraTech Cement
+          'INE918I01026', // 20  Bajaj Finserv
+          'INE280A01028', // 21  Titan
+          'INE733E01010', // 22  NTPC
+          'INE066F01020', // 23  HAL
+          'INE742F01042', // 24  Adani Ports
+          'INE213A01029', // 25  ONGC
+          'INE758T01015', // 26  Eternal (Zomato)
+          'INE263A01024', // 27  Bharat Electronics (BEL)
+          'INE423A01024', // 28  Adani Enterprises
+          'INE192R01011', // 29  Avenue Supermarts (DMart)
+          'INE019A01038', // 30  JSW Steel
+          'INE814H01029', // 31  Adani Power (new ISIN Dec 2025)
+          'INE814H01011', // 31  Adani Power (old ISIN)
+          'INE075A01022', // 32  Wipro
+          'INE752E01010', // 33  Power Grid
+          'INE021A01026', // 34  Asian Paints
+          'INE917I01010', // 35  Bajaj Auto
+          'INE522F01014', // 36  Coal India
+          'INE239A01024', // 37  Nestle India
+          'INE646L01027', // 38  IndiGo
+          'INE242A01010', // 39  Indian Oil Corporation
+          'INE081A01020', // 40  Tata Steel
+          'INE267A01025', // 41  Hindustan Zinc
+          'INE758E01017', // 42  Jio Financial
+          'INE0V6F01027', // 43  Hyundai Motor India
+          'INE047A01021', // 44  Grasim
+          'INE123W01016', // 45  SBI Life
+          'INE205A01025', // 46  Vedanta
+          'INE271C01023', // 47  DLF
+          'INE066A01021', // 48  Eicher Motors
+          'INE849A01020', // 49  Trent
+          'INE038A01020', // 50  Hindalco
+          'INE361B01024', // 51  Divi's Labs
+          'INE795G01014', // 52  HDFC Life Insurance
+          'INE214T01019', // 53  LTIMindtree
+          'INE053F01010', // 54  IRFC
+          'INE364U01010', // 55  Adani Green Energy
+          'INE200M01039', // 56  Varun Beverages
+          'INE494B01023', // 57  TVS Motor
+          'INE318A01026', // 58  Pidilite
+          'INE029A01011', // 59  BPCL
+          'INE669C01036', // 60  Tech Mahindra
+          'INE118A01012', // 61  Bajaj Holdings
+          'INE216A01030', // 62  Britannia
+          'INE079A01024', // 63  Ambuja Cements
+          'INE976I01016', // 64  Tata Capital (new entrant Dec 2025)
+          'INE155A01022', // 65  Tata Motors PV (TMPV)
+          'INE028A01039', // 66  Bank of Baroda
+          'INE121A01024', // 67  Cholamandalam
+          'INE721A01047', // 68  Shriram Finance
+          'INE721A01013', // 68  Shriram Finance (alt ISIN)
+          'INE1TAE01010', // 69  Tata Motors Ltd (TMCV) - NEW ISIN Dec 2025
+          'INE160A01022', // 70  Punjab National Bank
+          'INE346A01027', // 71  ICICI AMC (new entrant Dec 2025)
+          'INE134E01011', // 72  Power Finance Corp (PFC)
+          'INE343H01029', // 73  Solar Industries
+          'INE414G01012', // 74  Muthoot Finance (upgraded from Mid Cap!)
+          'INE245A01021', // 75  Tata Power
+          'INE059A01026', // 76  Cipla
+          'INE685A01028', // 77  Torrent Pharma
+          'INE102D01028', // 78  Godrej Consumer
+          'INE670K01029', // 79  Lodha (Macrotech)
+          'INE127D01025', // 80  HDFC AMC
+          'INE129A01019', // 81  GAIL
+          'INE476A01022', // 82  Canara Bank
+          'INE027H01010', // 83  Max Healthcare
+          'INE1NPP01017', // 84  Siemens Energy India
+          'INE003A01024', // 85  Siemens
+          'INE249Z01020', // 86  Mazagon Dock
+          'INE323A01026', // 87  Bosch
+          'INE117A01022', // 88  ABB India
+          'INE775A01035', // 89  Motherson
+          'INE298A01020', // 90  Cummins India
+          'INE192A01025', // 91  Tata Consumer Products
+          'INE067A01029', // 92  CG Power
+          'INE324D01010', // 93  LG Electronics India (new entrant)
+          'INE455K01017', // 94  Polycab
+          'INE692A01016', // 95  Union Bank of India
+          'INE931S01010', // 96  Adani Energy Solutions
+          'INE437A01024', // 97  Apollo Hospitals
+          'INE053A01029', // 98  Indian Hotels (Taj)
+          'INE158A01026', // 99  Hero MotoCorp
+          'INE089A01031', // 100 Dr. Reddy's
+        ])
+
+        // ── MID CAP: Ranks 101-250 (AMFI Dec 2025) ───────────────────────
+        const MID_CAP_ISINS = new Set([
+          'INE070A01015', // 101 Shree Cement
+          'INE749A01030', // 102 Jindal Steel & Power
+          'INE008A01015', // 103 IDBI Bank
+          'INE00H001014', // 104 Swiggy
+          'INE118H01025', // 105 BSE Ltd
+          'INE634S01028', // 106 Mankind Pharma
+          'INE562A01011', // 107 Indian Bank
+          'INE121J01017', // 108 Indus Towers
+          'INE854D01024', // 109 United Spirits
+          'INE776C01039', // 110 GMR Airports
+          'INE020B01018', // 111 REC Limited
+          'INE010B01027', // 112 Zydus Lifesciences
+          'INE765G01017', // 113 ICICI Lombard
+          'INE0HOQ01053', // 114 Groww (Billionbrains)
+          'INE935N01020', // 115 Dixon Technologies
+          'INE669E01016', // 116 Vodafone Idea
+          'INE176B01034', // 117 Havells
+          'INE196A01026', // 118 Marico
+          'INE094A01015', // 119 HPCL
+          'INE377N01017', // 120 Waaree Energies
+          'INE377Y01014', // 121 Bajaj Housing Finance
+          'INE016A01026', // 122 Dabur
+          'INE326A01037', // 123 Lupin
+          'INE121E01018', // 124 JSW Energy
+          'INE726G01019', // 125 ICICI Prudential Life
+          'INE262H01021', // 126 Persistent Systems
+          'INE343G01021', // 127 Bharti Hexacom
+          'INE663F01032', // 128 Info Edge (Naukri)
+          'INE663F01024', // 128 Info Edge (alt ISIN)
+          'INE647A01010', // 129 SRF
+          'INE257A01026', // 130 BHEL
+          'INE07Y701011', // 131 Hitachi Energy India
+          'INE0VDM01015', // 132 Meesho (new entrant)
+          'INE0ONG01011', // 133 NTPC Green Energy
+          'INE848E01016', // 134 NHPC
+          'INE417T01026', // 135 PB Fintech (PolicyBazaar)
+          'INE018E01016', // 136 SBI Cards
+          'INE208A01029', // 137 Ashok Leyland
+          'INE040H01021', // 138 Suzlon Energy
+          'INE674K01013', // 139 Aditya Birla Capital
+          'INE982J01020', // 140 Paytm
+          'INE565A01014', // 141 Indian Overseas Bank
+          'INE881D01027', // 142 Oracle Financial (OFSS)
+          'INE956O01016', // 143 Lenskart (new entrant)
+          'INE200A01026', // 144 GE Vernova T&D
+          'INE415G01027', // 145 RVNL
+          'INE811K01011', // 146 Prestige Estates
+          'INE281B01032', // 147 Lloyds Metals
+          'INE405E01023', // 148 UNO Minda
+          'INE061F01013', // 149 Fortis Healthcare
+          'INE388Y01029', // 150 Nykaa
+          'INE274J01014', // 151 Oil India
+          'INE399L01023', // 152 Adani Total Gas
+          'INE169A01031', // 153 Coromandel International
+          'INE481Y01014', // 154 GIC Re
+          'INE528G01035', // 155 Yes Bank
+          'INE01EA01019', // 156 Vishal Mega Mart
+          'INE358A01014', // 157 Abbott India
+          'INE813H01021', // 158 Torrent Power
+          'INE406A01037', // 159 Aurobindo Pharma
+          'INE584A01023', // 160 NMDC
+          'INE540L01014', // 161 Alkem Labs
+          'INE463A01038', // 162 Berger Paints
+          'INE883A01011', // 163 MRF
+          'INE619A01035', // 164 Patanjali Foods
+          'INE484J01027', // 165 Godrej Properties
+          'INE756I01012', // 166 HDB Financial Services (NEW in Dec 2025!)
+          'INE498L01015', // 167 L&T Finance
+          'INE880J01026', // 168 JSW Infrastructure
+          'INE513A01022', // 169 Schaeffler India
+          'INE095A01012', // 170 IndusInd Bank
+          'INE220G01021', // 171 Jindal Stainless
+          'INE949L01017', // 172 AU Small Finance Bank
+          'INE259A01022', // 173 Colgate
+          'INE093I01010', // 174 Oberoi Realty
+          'INE465A01025', // 175 Bharat Forge
+          'INE188A01015', // 176 FACT
+          'INE591G01025', // 177 Coforge
+          'INE591G01017', // 177 Coforge (alt ISIN)
+          'INE628A01036', // 178 UPL
+          'INE211B01039', // 179 Phoenix Mills
+          'INE084A01016', // 180 Bank of India
+          'INE974X01010', // 181 Tube Investments
+          'INE335Y01020', // 182 IRCTC
+          'INE171Z01026', // 183 Bharat Dynamics
+          'INE092T01019', // 184 IDFC First Bank
+          'INE603J01030', // 185 PI Industries
+          'INE338I01027', // 186 Motilal Oswal
+          'INE935A01035', // 187 Glenmark Pharma
+          'INE180A01020', // 188 Max Financial Services
+          'INE114A01011', // 189 SAIL
+          'INE171A01029', // 190 Federal Bank
+          'INE298J01013', // 191 Nippon Life India AMC
+          'INE356A01018', // 192 Mphasis
+          'INE303R01014', // 193 Kalyan Jewellers
+          'INE473A01011', // 194 Linde India
+          'INE660A01013', // 195 Sundaram Finance
+          'INE195A01028', // 196 Supreme Industries
+          'INE376G01013', // 197 Biocon
+          'INE151A01013', // 198 Tata Communications
+          'INE947Q01028', // 199 Laurus Labs
+          'INE206F01022', // 200 Authum Investment
+          'INE260B01028', // 201 Godfrey Phillips
+          'INE823G01014', // 202 JK Cement
+          'INE686F01025', // 203 United Breweries
+          'INE702C01027', // 204 APL Apollo
+          'INE761H01022', // 205 Page Industries
+          'INE159A01016', // 206 GSK Pharma
+          'INE787D01026', // 207 Balkrishna Industries
+          'INE379A01028', // 208 ITC Hotels (Mid Cap in Dec 2025)
+          'INE704P01025', // 209 Cochin Shipyard
+          'INE0BS701011', // 210 Premier Energies
+          'INE093A01041', // 211 Hexaware Technologies
+          'INE010V01017', // 212 L&T Technology Services (LTTS)
+          'INE226A01021', // 213 Voltas
+          'INE745G01035', // 214 MCX
+          'INE031A01017', // 215 HUDCO
+          'INE466L01038', // 216 360 ONE
+          'INE457A01014', // 217 Bank of Maharashtra
+          'INE179A01014', // 218 P&G Hygiene
+          'INE347G01014', // 219 Petronet LNG
+          'INE202E01016', // 220 IREDA
+          'INE0CZ201020', // 221 Anthem Biosciences
+          'INE111A01025', // 222 CONCOR
+          'INE774D01024', // 223 M&M Financial
+          'INE139A01034', // 224 National Aluminium
+          'INE00R701025', // 225 Dalmia Bharat
+          'INE797F01020', // 226 Jubilant Foodworks
+          'INE918Z01012', // 227 Kaynes Technology
+          'INE042A01014', // 228 Escorts Kubota
+          'INE944F01028', // 229 Radico Khaitan
+          'INE09N301011', // 230 Gujarat Fluorochemicals
+          'INE913H01037', // 231 Endurance Technologies
+          'INE878B01027', // 232 KEI Industries
+          'INE006I01046', // 233 Astral
+          'INE152A01029', // 234 Thermax
+          'INE0LP301011', // 235 PhysicsWallah
+          'INE691A01018', // 236 UCO Bank
+          'INE472A01039', // 237 Blue Star
+          'INE410P01011', // 238 Narayana Hrudayalaya
+          'INE672A01026', // 239 Tata Investment Corp
+          'INE233A01035', // 240 Godrej Industries
+          'INE511C01022', // 241 Poonawalla Fincorp
+          'INE007A01025', // 242 CRISIL
+          'INE930H01031', // 243 KPR Mill
+          'INE149A01033', // 244 Cholamandalam Financial Holdings
+          'INE470A01017', // 245 3M India
+          'INE571A01038', // 246 IPCA Labs
+          'INE202B01038', // 247 Piramal Finance
+          'INE372A01015', // 248 Apar Industries
+          'INE002L01015', // 249 SJVN
+          'INE474Q01031', // 250 Global Health (Medanta)
+        ])
+
+        // ── NSE symbol fallback (for imports without stored ISIN) ─────────
+        const LARGE_CAP_SYMS = new Set([
+          'RELIANCE','HDFCBANK','BHARTIARTL','TCS','ICICIBANK','SBIN','INFY',
+          'BAJFINANCE','LICI','HINDUNILVR','LT','ITC','MARUTI','MM','HCLTECH',
+          'KOTAKBANK','SUNPHARMA','AXISBANK','ULTRACEMCO','BAJAJFINSV','TITAN',
+          'NTPC','HAL','ADANIPORTS','ONGC','ETERNAL','ZOMATO','BEL','ADANIENT',
+          'DMART','JSWSTEEL','ADANIPOWER','WIPRO','POWERGRID','ASIANPAINT',
+          'BAJAJ-AUTO','COALINDIA','NESTLEIND','INDIGO','IOC','TATASTEEL',
+          'HINDZINC','JIOFIN','HYUNDAI','GRASIM','SBILIFE','VEDL','DLF',
+          'EICHERMOT','TRENT','HINDALCO','DIVISLAB','HDFCLIFE','LTIM','IRFC',
+          'ADANIGREEN','VBL','TVSMOTOR','PIDILITIND','BPCL','TECHM','BAJAJHLDNG',
+          'BRITANNIA','AMBUJACEM','TATACAP','TMPV','BANKBARODA','CHOLAFIN',
+          'SHRIRAMFIN','TMCV','PNB','ICICIAMC','PFC','SOLARINDS','MUTHOOTFIN',
+          'TATAPOWER','CIPLA','TORNTPHARM','GODREJCP','LODHA','HDFCAMC','GAIL',
+          'CANBK','MAXHEALTH','ENRIN','SIEMENS','MAZDOCK','BOSCHLTD','ABB',
+          'MOTHERSON','CUMMINSIND','TATACONSUM','CGPOWER','LGEINDIA','POLYCAB',
+          'UNIONBANK','ADANIENSOL','APOLLOHOSP','INDHOTEL','HEROMOTOCO','DRREDDY',
+          // Broker abbreviations
+          'HDFBAN','INDOIL','COALIN','LARTOU','HDFSTA','CADHEA','MAHMAH',
+        ])
+
+        const MID_CAP_SYMS = new Set([
+          'SHREECEM','JINDALSTEL','IDBI','SWIGGY','BSE','MANKIND','INDIANB',
+          'INDUSTOWER','UNITDSPR','GMRAIRPORT','RECLTD','ZYDUSLIFE','ICICIGI',
+          'GROWW','DIXON','IDEA','HAVELLS','MARICO','HINDPETRO','WAAREEENER',
+          'BAJAJHFL','DABUR','LUPIN','JSWENERGY','ICICIPRULI','PERSISTENT',
+          'BHARTIHEXA','NAUKRI','SRF','BHEL','POWERINDIA','MEESHO','NTPCGREEN',
+          'NHPC','POLICYBZR','SBICARD','ASHOKLEY','SUZLON','ABCAPITAL','PAYTM',
+          'IOB','OFSS','RVNL','PRESTIGE','LLOYDSME','UNOMINDA','FORTIS','NYKAA',
+          'OIL','ATGL','COROMANDEL','GICRE','YESBANK','VMM','ABBOTINDIA',
+          'TORNTPOWER','AUROPHARMA','NMDC','ALKEM','BERGEPAINT','MRF','PATANJALI',
+          'GODREJPROP','HDBFS','LTF','JSWINFRA','SCHAEFFLER','INDUSINDBK','JSL',
+          'AUBANK','COLPAL','OBEROIRLTY','BHARATFORG','FACT','COFORGE','UPL',
+          'PHOENIXLTD','BANKINDIA','TIINDIA','IRCTC','BDL','IDFCFIRSTB','PIIND',
+          'MOTILALOFS','GLENMARK','MFSL','SAIL','FEDERALBNK','NAM-INDIA','MPHASIS',
+          'KALYANKJIL','LINDEINDIA','SUNDARMFIN','SUPREMEIND','BIOCON','TATACOMM',
+          'LAURUSLABS','GODFRYPHLP','JKCEMENT','UBL','APLAPOLLO','PAGEIND',
+          'GLAXO','BALKRISIND','ITCHOTELS','COCHINSHIP','PREMIERENE','HEXT',
+          'LTTS','VOLTAS','MCX','HUDCO','360ONE','MAHABANK','PGHH','PETRONET',
+          'IREDA','CONCOR','M&MFIN','NATIONALUM','DALBHARAT','JUBLFOOD','KAYNES',
+          'ESCORTS','RADICO','FLUOROCHEM','ENDURANCE','KEI','ASTRAL','THERMAX',
+          'UCOBANK','BLUESTARCO','NH','TATAINVEST','GODREJIND','POONAWALLA',
+          'CRISIL','KPRMILL','CHOLAHLDNG','3MINDIA','IPCALAB','PIRAMALFIN',
+          'APARINDS','SJVN','MEDANTA',
+          // Broker abbreviations
+          'ASHLEY','INDBA','TTKHEA','MANAFI','NATCOPHARM','FINCABLES',
+          'TTKPRESTIG','JYOTHYLAB','TMB','TANLA','POWER','HDB','ASHOKA',
+        ])
+
+        const classifyMarketCap = (name, isin) => {
+          // Step 0: ETF / Gold / Commodity detection by name
+          const nu = (name || '').toUpperCase()
+          if (/\bETF\b|GOLDBEES|INDEX FUND/.test(nu) ||
+              /NIFTY\s*(50|NEXT|100|200|500|BANK|IT|PHARMA|AUTO|MIDCAP|SMALLCAP)/i.test(nu) ||
+              /SENSEX|NASDAQ/.test(nu)) return 'Index / ETF'
+          if (/GOLD.*(ETF|EXCHANGE|BEES|FOF)|SILVER.*(ETF|FOF)/.test(nu)) return 'Commodity ETF'
+
+          // Step 1: ISIN lookup — exact match from AMFI Dec 2025 official PDF
+          if (isin && LARGE_CAP_ISINS.has(isin)) return 'Large Cap'
+          if (isin && MID_CAP_ISINS.has(isin))   return 'Mid Cap'
+          if (isin && isin.startsWith('INF'))      return 'Index / ETF'
+
+          // Step 2: NSE symbol extraction + lookup
+          const words = nu.replace(/\.?LTD\.?$|LIMITED$|\bLTD\b/,'').trim().split(/[\s&]+/)
+          const syms  = [nu.replace(/[^A-Z0-9-]/g,'').slice(0,12),
+                         ...words.filter(w => /^[A-Z0-9-]{2,12}$/.test(w))]
+          for (const s of syms) {
+            if (LARGE_CAP_SYMS.has(s)) return 'Large Cap'
+            if (MID_CAP_SYMS.has(s))   return 'Mid Cap'
+          }
+
+          // Step 3: Full company name keyword fallback
+          const n = nu.toLowerCase()
+          const lkw = [
+            'reliance industries','hdfc bank','bharti airtel','tata consultancy',
+            'icici bank','state bank of india','infosys','bajaj finance','lic',
+            'hindustan unilever','larsen & toubro','larsen and toubro','itc ltd',
+            'maruti suzuki','mahindra & mahindra','hcl technologies','kotak mahindra',
+            'sun pharmaceutical','axis bank','ultratech cement','bajaj finserv','titan',
+            'ntpc limited','hindustan aeronautics','adani ports','ongc','bharat electronics',
+            'adani enterprises','avenue supermarts','jsw steel','wipro','power grid',
+            'asian paints','bajaj auto','coal india','nestle india','tata steel',
+            'hdfc life','ltimindtree','irfc','adani green','varun beverages','tvs motor',
+            'pidilite','bpcl','tech mahindra','britannia','ambuja cements','tata capital',
+            'tata motors passenger','bank of baroda','cholamandalam','shriram finance',
+            'punjab national bank','power finance corp','solar industries','muthoot finance',
+            'tata power','cipla','torrent pharma','godrej consumer','macrotech','lodha',
+            'hdfc amc','gail','canara bank','max healthcare','siemens','mazagon dock',
+            'bosch','abb india','motherson','cummins india','tata consumer','cg power',
+            'lg electronics','polycab','union bank','apollo hospitals','indian hotels',
+            'hero motocorp','dr. reddy','dr reddy',
+          ]
+          const mkw = [
+            'shree cement','jindal steel','idbi bank','mankind pharma','indian bank',
+            'indus towers','gmr airports','rec limited','zydus','icici lombard',
+            'havells','marico','hindustan petroleum','bajaj housing','dabur','lupin',
+            'jsw energy','icici prudential life','persistent systems','srf limited',
+            'bhel','nhpc','policybazaar','sbi cards','ashok leyland','suzlon',
+            'godrej properties','hdb financial','l&t finance','jsw infra','schaeffler',
+            'indusind bank','federal bank','coforge','mphasis','sundaram finance',
+            'supreme industries','biocon','laurus labs','jk cement','united breweries',
+            'itc hotels','cochin shipyard','l&t technology','voltas','blue star',
+            'pi industries','motilal','glenmark','sail','berger paints','nmdc',
+            'alkem','aurobindo','torrent power','yes bank','fortis','oberoi realty',
+            'bharat forge','phoenix mills','irctc','tube investments','bharat dynamics',
+            'idfc first bank','radico','ipca','endurance','astral','thermax',
+            'kalyan jewellers','linde india','coromandel','nmdc','narayana',
+            'prestige estate','nykaa','oil india','abbott india',
+          ]
+          for (const k of lkw) { if (n.includes(k)) return 'Large Cap' }
+          for (const k of mkw) { if (n.includes(k)) return 'Mid Cap'   }
+
+          return 'Small Cap'
+        }
+        const mcapMap = {}
+        equityAssets.forEach(a => {
+          if (!a.value) return
+          // Only classify stocks — skip Gold ETFs, Crypto etc. from market cap buckets
+          if (a.category !== 'Stocks & Equities') return
+          const cap = classifyMarketCap(a.name, a._isin || '')
+          if (!mcapMap[cap]) mcapMap[cap] = { value: 0, count: 0 }
+          mcapMap[cap].value += a.value
+          mcapMap[cap].count += 1
+        })
+        const totalMcap = Object.values(mcapMap).reduce((s, v) => s + v.value, 0)
+        const MCAP_COLORS = {
+          'Large Cap':'#2563eb', 'Mid Cap':'#c8920a', 'Small Cap':'#16a34a',
+          'Index / ETF':'#8b5cf6', 'Commodity ETF':'#d97706',
+        }
+        const mcapData = Object.entries(mcapMap)
+          .map(([name, d]) => ({
+            name, value: d.value, count: d.count,
+            pct: totalMcap > 0 ? (d.value / totalMcap * 100) : 0,
+            color: MCAP_COLORS[name] || '#8892b0',
+          }))
+          .sort((a, b) => b.value - a.value)
+
+        const IDEAL_ALLOC = { 'Large Cap': 60, 'Mid Cap': 25, 'Small Cap': 15 }
+
+        return (
+          <>
+            {/* ── Sector-wise Allocation ──────────────────────────────────── */}
+            <div className="card" style={{ padding:24 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20, flexWrap:'wrap', gap:8 }}>
+                <h3 className="section-heading">Equity — Sector-wise Allocation</h3>
+                <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                  {activeSector && (
+                    <button onClick={() => setActiveSector(null)}
+                      style={{ fontSize:11, color:'#c8920a', background:'rgba(200,146,10,0.08)', border:'1px solid rgba(200,146,10,0.25)', borderRadius:20, padding:'3px 10px', cursor:'pointer', fontFamily:"'Outfit',sans-serif" }}>
+                      ✕ Clear filter
+                    </button>
+                  )}
+                  <span style={{ fontSize:12, color:'#8892b0' }}>{sectorData.length} sectors · {equityAssets.filter(a=>a._sector||a.note).length} stocks</span>
+                </div>
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'auto 1fr', gap:28, alignItems:'start' }}>
+                {/* Donut chart */}
+                <div style={{ position:'relative', width:160, height:160, flexShrink:0 }}>
+                  <svg viewBox="0 0 160 160" width="160" height="160">
+                    {(() => {
+                      let cumPct = 0
+                      const r = 60, cx = 80, cy = 80
+                      const circ = 2 * Math.PI * r
+                      return sectorData.map((s, i) => {
+                        const dash    = (s.pct / 100) * circ
+                        const offset  = circ - (cumPct / 100) * circ
+                        cumPct += s.pct
+                        const isActive = activeSector === s.name
+                        return (
+                          <circle key={s.name} cx={cx} cy={cy} r={r}
+                            fill="none" stroke={s.color}
+                            strokeWidth={isActive ? 32 : 26}
+                            strokeDasharray={`${dash} ${circ - dash}`}
+                            strokeDashoffset={offset}
+                            opacity={activeSector && !isActive ? 0.3 : 1}
+                            style={{ transform:'rotate(-90deg)', transformOrigin:'center', cursor:'pointer', transition:'all 0.2s' }}
+                            onClick={() => setActiveSector(isActive ? null : s.name)}
+                          />
+                        )
+                      })
+                    })()}
+                    {activeSector
+                      ? <text x="80" y="86" textAnchor="middle" style={{ fontSize:9, fill:'#c8920a', fontFamily:"'Outfit',sans-serif" }}>{activeSector}</text>
+                      : <text x="80" y="76" textAnchor="middle" style={{ fontSize:11, fill:'#8892b0', fontFamily:"'Outfit',sans-serif" }}>Sectors</text>
+                    }
+                    <text x="80" y="99" textAnchor="middle" style={{ fontSize:activeSector?14:18, fontWeight:700, fill:'#1a1d2e', fontFamily:"'Cormorant Garamond',serif" }}>
+                      {activeSector ? sectorData.find(s=>s.name===activeSector)?.count + ' stocks' : sectorData.length}
+                    </text>
+                  </svg>
+                </div>
+                {/* Bar list — clickable rows */}
+                <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                  {sectorData.map((s, i) => {
+                    const isActive = activeSector === s.name
+                    return (
+                    <div key={s.name} onClick={() => setActiveSector(isActive ? null : s.name)}
+                      style={{ cursor:'pointer', padding:'6px 8px', borderRadius:8, border:`1px solid ${isActive ? s.color+'66' : 'transparent'}`,
+                        background: isActive ? s.color+'0d' : 'transparent', opacity: activeSector && !isActive ? 0.45 : 1, transition:'all 0.15s' }}>
+                      <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:7 }}>
+                          <div style={{ width:9, height:9, borderRadius:2, background:s.color, flexShrink:0 }} />
+                          <span style={{ fontSize:12, color:'#1a1d2e', fontWeight: isActive ? 600 : 500 }}>{s.name}</span>
+                          <span style={{ fontSize:11, color: isActive ? s.color : '#b0b8d0', fontWeight: isActive ? 600 : 400 }}>({s.count})</span>
+                        </div>
+                        <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+                          <span style={{ fontSize:11, fontFamily:"'JetBrains Mono',monospace", color:'#8892b0' }}>{fmt(s.value)}</span>
+                          <span style={{ fontSize:12, fontFamily:"'JetBrains Mono',monospace", fontWeight:600, color:s.color, minWidth:42, textAlign:'right' }}>{s.pct.toFixed(1)}%</span>
+                        </div>
+                      </div>
+                      <div style={{ height:4, background:'#eef0f8', borderRadius:2, overflow:'hidden' }}>
+                        <div style={{ height:'100%', width:`${s.pct}%`, background:s.color, borderRadius:2, transition:'width 0.5s cubic-bezier(0.16,1,0.3,1)' }} />
+                      </div>
+                    </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Drill-down: holdings in selected sector */}
+              {activeSector && (() => {
+                const secAssets = equityAssets
+                  .filter(a => {
+                    const s = (a._sector || a.note || '').toLowerCase().trim()
+                    return s === activeSector.toLowerCase()
+                  })
+                  .sort((a, b) => b.value - a.value)
+                const secColor = sectorData.find(s => s.name === activeSector)?.color || '#c8920a'
+                const secInvested = secAssets.reduce((s,a) => s + (a._investedValue||0), 0)
+                const secPresent  = secAssets.reduce((s,a) => s + (a.value||0), 0)
+                const secPL       = secInvested > 0 ? secPresent - secInvested : null
+                const secPLPct    = secInvested > 0 ? (secPL / secInvested) * 100 : null
+                return (
+                  <div style={{ marginTop:20, borderTop:`2px solid ${secColor}22`, paddingTop:16 }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14, flexWrap:'wrap', gap:8 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                        <div style={{ width:10, height:10, borderRadius:2, background:secColor }} />
+                        <span style={{ fontSize:13, fontWeight:600, color:'#1a1d2e' }}>{activeSector}</span>
+                        <span style={{ fontSize:12, color:'#8892b0' }}>— {secAssets.length} holdings</span>
+                      </div>
+                      {secPLPct !== null && (
+                        <span style={{ fontSize:12, fontFamily:"'JetBrains Mono',monospace", fontWeight:600,
+                          color: secPLPct >= 0 ? '#16a34a' : '#dc2626',
+                          background: secPLPct >= 0 ? 'rgba(22,163,74,0.08)' : 'rgba(220,38,38,0.07)',
+                          padding:'3px 10px', borderRadius:20 }}>
+                          {secPLPct >= 0 ? '+' : ''}{secPLPct.toFixed(2)}%  ({secPLPct >= 0 ? '+' : ''}{fmt(secPL)})
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                      {secAssets.map(a => {
+                        const plPct = a._plPct
+                        const plCol = plPct >= 0 ? '#16a34a' : '#dc2626'
+                        return (
+                          <div key={a.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
+                            padding:'8px 12px', background:'#f8f9fc', borderRadius:8, border:'1px solid #eef0f8', gap:8 }}>
+                            <div style={{ flex:1, minWidth:0 }}>
+                              <div style={{ fontSize:12, fontWeight:500, color:'#1a1d2e', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{a.name}</div>
+                              <div style={{ fontSize:10, color:'#b0b8d0', marginTop:1 }}>{a.institution}{a._qty > 0 ? ` · Qty: ${a._qty}` : ''}</div>
+                            </div>
+                            <div style={{ textAlign:'right', flexShrink:0 }}>
+                              <div style={{ fontSize:12, fontFamily:"'JetBrains Mono',monospace", color:'#c8920a', fontWeight:500 }}>{fmt(a.value)}</div>
+                              {plPct !== null && plPct !== undefined && (
+                                <div style={{ fontSize:10, fontFamily:"'JetBrains Mono',monospace", color:plCol, marginTop:1 }}>
+                                  {plPct >= 0 ? '+' : ''}{Number(plPct).toFixed(2)}%
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })()}
+            </div>
+
+            {/* ── Market Cap Allocation ────────────────────────────────────── */}
+            <div className="card" style={{ padding:24 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:20, flexWrap:'wrap', gap:8 }}>
+                <h3 className="section-heading">Equity — Market Cap Allocation</h3>
+                <span style={{ fontSize:11, color:'#8892b0', background:'#f0f2f8', padding:'3px 10px', borderRadius:20 }}>
+                  AMFI Dec 2025 · SEBI categorisation
+                </span>
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:24, alignItems:'start' }}>
+                {/* Left — donut + labels */}
+                <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+                  {/* Donut */}
+                  <div style={{ display:'flex', justifyContent:'center' }}>
+                    <div style={{ position:'relative', width:180, height:180 }}>
+                      <svg viewBox="0 0 180 180" width="180" height="180">
+                        {(() => {
+                          let cum = 0
+                          const r = 68, cx = 90, cy = 90, circ = 2 * Math.PI * r
+                          return mcapData.map((m) => {
+                            const dash   = (m.pct / 100) * circ
+                            const offset = circ - (cum / 100) * circ
+                            cum += m.pct
+                            return (
+                              <circle key={m.name} cx={cx} cy={cy} r={r}
+                                fill="none" stroke={m.color} strokeWidth={30}
+                                strokeDasharray={`${dash} ${circ - dash}`}
+                                strokeDashoffset={offset}
+                                style={{ transform:'rotate(-90deg)', transformOrigin:'center' }}
+                              />
+                            )
+                          })
+                        })()}
+                        <text x="90" y="86" textAnchor="middle" style={{ fontSize:11, fill:'#8892b0', fontFamily:"'Outfit',sans-serif" }}>Total</text>
+                        <text x="90" y="104" textAnchor="middle" style={{ fontSize:15, fontWeight:700, fill:'#1a1d2e', fontFamily:"'Cormorant Garamond',serif" }}>{fmts(totalMcap)}</text>
+                      </svg>
+                    </div>
+                  </div>
+                  {/* Legend — clickable */}
+                  {mcapData.map(m => {
+                    const isActive = activeMcap === m.name
+                    return (
+                    <div key={m.name} onClick={() => setActiveMcap(isActive ? null : m.name)}
+                      style={{ display:'flex', alignItems:'center', justifyContent:'space-between',
+                        cursor:'pointer', padding:'5px 8px', borderRadius:8,
+                        border:`1px solid ${isActive ? m.color+'66' : 'transparent'}`,
+                        background: isActive ? m.color+'0d' : 'transparent',
+                        opacity: activeMcap && !isActive ? 0.45 : 1, transition:'all 0.15s' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                        <div style={{ width:10, height:10, borderRadius:'50%', background:m.color }} />
+                        <span style={{ fontSize:12, color:'#1a1d2e', fontWeight: isActive ? 600 : 400 }}>{m.name}</span>
+                        <span style={{ fontSize:11, color: isActive ? m.color : '#b0b8d0', fontWeight: isActive ? 600 : 400 }}>({m.count})</span>
+                      </div>
+                      <div style={{ display:'flex', gap:10 }}>
+                        <span style={{ fontSize:11, color:'#8892b0', fontFamily:"'JetBrains Mono',monospace" }}>{fmt(m.value)}</span>
+                        <span style={{ fontSize:12, fontWeight:600, color:m.color, fontFamily:"'JetBrains Mono',monospace", minWidth:42, textAlign:'right' }}>{m.pct.toFixed(1)}%</span>
+                      </div>
+                    </div>
+                    )
+                  })}
+                </div>
+
+                {/* Right — vs ideal allocation + risk note */}
+                <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+                  <div style={{ fontSize:12, color:'#8892b0', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:4 }}>
+                    Your mix vs Ideal (aggressive)
+                  </div>
+                  {['Large Cap','Mid Cap','Small Cap'].map(cap => {
+                    const actual  = mcapData.find(m => m.name === cap)?.pct || 0
+                    const ideal   = IDEAL_ALLOC[cap]
+                    const diff    = actual - ideal
+                    const color   = MCAP_COLORS[cap]
+                    return (
+                      <div key={cap}>
+                        <div style={{ display:'flex', justifyContent:'space-between', marginBottom:5 }}>
+                          <span style={{ fontSize:12, color:'#1a1d2e', fontWeight:500 }}>{cap}</span>
+                          <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                            <span style={{ fontSize:11, color:'#8892b0' }}>Ideal: {ideal}%</span>
+                            <span style={{ fontSize:12, fontWeight:600, fontFamily:"'JetBrains Mono',monospace",
+                              color: Math.abs(diff) < 5 ? '#16a34a' : '#d97706' }}>
+                              {actual.toFixed(1)}%
+                              <span style={{ fontSize:10, fontWeight:400, marginLeft:4, color: diff > 0 ? '#c8920a' : '#8892b0' }}>
+                                {diff > 0 ? `+${diff.toFixed(1)}` : diff.toFixed(1)}
+                              </span>
+                            </span>
+                          </div>
+                        </div>
+                        {/* Stacked: actual vs ideal */}
+                        <div style={{ position:'relative', height:6, background:'#eef0f8', borderRadius:3, overflow:'hidden' }}>
+                          <div style={{ position:'absolute', left:0, top:0, height:'100%', width:`${ideal}%`, background:'#e2e5f0', borderRadius:3 }} />
+                          <div style={{ position:'absolute', left:0, top:0, height:'100%', width:`${Math.min(actual, 100)}%`, background:color, borderRadius:3, opacity:0.85 }} />
+                        </div>
+                      </div>
+                    )
+                  })}
+
+                  {/* Risk indicator */}
+                  {(() => {
+                    const largePct = mcapData.find(m => m.name==='Large Cap')?.pct || 0
+                    const smallPct = (mcapData.find(m => m.name==='Small Cap')?.pct || 0) + (mcapData.find(m => m.name==='Mid Cap')?.pct || 0)
+                    const risk = smallPct > 60 ? 'High' : smallPct > 35 ? 'Moderate' : 'Conservative'
+                    const riskColor = { High:'#dc2626', Moderate:'#d97706', Conservative:'#16a34a' }[risk]
+                    return (
+                      <div style={{ marginTop:8, padding:'12px 14px', background:'#f8f9fc', borderRadius:10, border:'1px solid #eef0f8' }}>
+                        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+                          <span style={{ fontSize:12, color:'#4a4f6a', fontWeight:500 }}>Portfolio Risk Profile</span>
+                          <span style={{ fontSize:12, fontWeight:700, color:riskColor,
+                            background: riskColor + '14', padding:'2px 10px', borderRadius:20 }}>
+                            {risk}
+                          </span>
+                        </div>
+                        <div style={{ fontSize:11, color:'#8892b0', lineHeight:1.5 }}>
+                          {risk === 'High' && 'Heavy small/mid cap tilt. Higher return potential but higher volatility.'}
+                          {risk === 'Moderate' && 'Balanced mix. Good growth potential with manageable risk.'}
+                          {risk === 'Conservative' && 'Large cap heavy. Stable returns with lower volatility.'}
+                        </div>
+                      </div>
+                    )
+                  })()}
+
+                  <div style={{ fontSize:11, color:'#b0b8d0', lineHeight:1.5, fontStyle:'italic' }}>
+                    * SEBI/AMFI classification (Dec 2025 official list). Top 100 = Large Cap, 101-250 = Mid Cap, 251+ = Small Cap. Ideal: 60% Large / 25% Mid / 15% Small.
+                  </div>
+                </div>
+              </div>
+
+              {/* Drill-down: holdings in selected market cap bucket */}
+              {activeMcap && (() => {
+                const capAssets = equityAssets
+                  .filter(a => a.category === 'Stocks & Equities' && classifyMarketCap(a.name, a._isin||'') === activeMcap)
+                  .sort((a, b) => b.value - a.value)
+                const capColor   = MCAP_COLORS[activeMcap] || '#8892b0'
+                const capInvested = capAssets.reduce((s,a) => s + (a._investedValue||0), 0)
+                const capPresent  = capAssets.reduce((s,a) => s + (a.value||0), 0)
+                const capPL       = capInvested > 0 ? capPresent - capInvested : null
+                const capPLPct    = capInvested > 0 ? (capPL / capInvested) * 100 : null
+                return (
+                  <div style={{ marginTop:20, borderTop:`2px solid ${capColor}22`, paddingTop:16 }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14, flexWrap:'wrap', gap:8 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                        <div style={{ width:10, height:10, borderRadius:'50%', background:capColor }} />
+                        <span style={{ fontSize:13, fontWeight:600, color:'#1a1d2e' }}>{activeMcap}</span>
+                        <span style={{ fontSize:12, color:'#8892b0' }}>— {capAssets.length} holdings</span>
+                        <button onClick={() => setActiveMcap(null)}
+                          style={{ fontSize:11, color:capColor, background:capColor+'14', border:`1px solid ${capColor}44`, borderRadius:20, padding:'2px 8px', cursor:'pointer', fontFamily:"'Outfit',sans-serif" }}>
+                          ✕ Clear
+                        </button>
+                      </div>
+                      {capPLPct !== null && (
+                        <span style={{ fontSize:12, fontFamily:"'JetBrains Mono',monospace", fontWeight:600,
+                          color: capPLPct >= 0 ? '#16a34a' : '#dc2626',
+                          background: capPLPct >= 0 ? 'rgba(22,163,74,0.08)' : 'rgba(220,38,38,0.07)',
+                          padding:'3px 10px', borderRadius:20 }}>
+                          {capPLPct >= 0 ? '+' : ''}{capPLPct.toFixed(2)}%  ({capPLPct >= 0 ? '+' : ''}{fmt(capPL)})
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))', gap:8 }}>
+                      {capAssets.map(a => {
+                        const plPct = a._plPct
+                        const plCol = plPct !== null && plPct !== undefined ? (plPct >= 0 ? '#16a34a' : '#dc2626') : '#8892b0'
+                        const sector = (a._sector || a.note || '').trim()
+                        return (
+                          <div key={a.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
+                            padding:'8px 12px', background:'#f8f9fc', borderRadius:8, border:'1px solid #eef0f8', gap:8 }}>
+                            <div style={{ flex:1, minWidth:0 }}>
+                              <div style={{ fontSize:12, fontWeight:500, color:'#1a1d2e', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{a.name}</div>
+                              <div style={{ fontSize:10, color:'#b0b8d0', marginTop:1 }}>
+                                {[sector, a.institution, a._qty > 0 ? `Qty: ${a._qty}` : ''].filter(Boolean).join(' · ')}
+                              </div>
+                            </div>
+                            <div style={{ textAlign:'right', flexShrink:0 }}>
+                              <div style={{ fontSize:12, fontFamily:"'JetBrains Mono',monospace", color:'#c8920a', fontWeight:500 }}>{fmt(a.value)}</div>
+                              {plPct !== null && plPct !== undefined && (
+                                <div style={{ fontSize:10, fontFamily:"'JetBrains Mono',monospace", color:plCol, marginTop:1 }}>
+                                  {plPct >= 0 ? '+' : ''}{Number(plPct).toFixed(2)}%
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })()}
+            </div>
+          </>
+        )
+      })()}
+
+      {/* ── Mutual Fund Analytics ────────────────────────────────────────── */}
+      {(data?.assets||[]).some(a => a._isMF) && (() => {
+        const mfAssets = (data?.assets||[]).filter(a => a._isMF)
+
+        // Parse MF category from _sector / note field
+        // e.g. "Equity - Small Cap", "Hybrid - Arbitrage", "Others - Fund of Funds"
+        const parseMFCategory = (sector) => {
+          const s = (sector || '').toLowerCase()
+          if (s.includes('small cap'))            return 'Small Cap'
+          if (s.includes('mid cap'))              return 'Mid Cap'
+          if (s.includes('large cap'))            return 'Large Cap'
+          if (s.includes('multi cap') || s.includes('flexi cap') || s.includes('large & mid')) return 'Flexi / Multi Cap'
+          if (s.includes('elss') || s.includes('tax sav'))  return 'ELSS (Tax Saving)'
+          if (s.includes('arbitrage'))            return 'Arbitrage'
+          if (s.includes('hybrid') || s.includes('balanced') || s.includes('equity savings')) return 'Hybrid'
+          if (s.includes('debt') || s.includes('liquid') || s.includes('money market') || s.includes('overnight') || s.includes('ultra short') || s.includes('short dur') || s.includes('credit risk')) return 'Debt'
+          if (s.includes('gold') || s.includes('silver') || s.includes('commodity')) return 'Gold / Commodity'
+          if (s.includes('fund of fund') || s.includes('fof') || s.includes('overseas') || s.includes('international')) return 'Fund of Funds'
+          if (s.includes('index') || s.includes('nifty') || s.includes('sensex') || s.includes('etf')) return 'Index / ETF'
+          if (s.includes('equity'))               return 'Equity'
+          return 'Other'
+        }
+
+        const MF_CAT_COLORS = {
+          'Large Cap':        '#2563eb',
+          'Mid Cap':          '#c8920a',
+          'Small Cap':        '#16a34a',
+          'Flexi / Multi Cap':'#7c3aed',
+          'ELSS (Tax Saving)':'#0891b2',
+          'Hybrid':           '#d97706',
+          'Arbitrage':        '#8b5cf6',
+          'Debt':             '#6b7494',
+          'Gold / Commodity': '#b8820e',
+          'Fund of Funds':    '#059669',
+          'Index / ETF':      '#dc2626',
+          'Equity':           '#3b82f6',
+          'Other':            '#9ca3af',
+        }
+
+        // Group MFs by category
+        const catMap = {}
+        mfAssets.forEach(a => {
+          const cat = parseMFCategory(a._sector || a.note || '')
+          if (!catMap[cat]) catMap[cat] = { funds: [], value: 0, invested: 0 }
+          catMap[cat].funds.push(a)
+          catMap[cat].value    += (a.value || 0)
+          catMap[cat].invested += (a._investedValue || 0)
+        })
+        const totalMFVal = mfAssets.reduce((s, a) => s + (a.value || 0), 0)
+        const totalMFInv = mfAssets.reduce((s, a) => s + (a._investedValue || 0), 0)
+        const totalMFPL  = totalMFVal - totalMFInv
+        const totalMFPLPct = totalMFInv > 0 ? (totalMFPL / totalMFInv) * 100 : 0
+        const mfCatData = Object.entries(catMap)
+          .map(([cat, d]) => ({
+            cat, funds: d.funds, value: d.value, invested: d.invested,
+            pl: d.value - d.invested,
+            plPct: d.invested > 0 ? ((d.value - d.invested) / d.invested * 100) : null,
+            pct: totalMFVal > 0 ? (d.value / totalMFVal * 100) : 0,
+            color: MF_CAT_COLORS[cat] || '#9ca3af',
+          }))
+          .sort((a, b) => b.value - a.value)
+
+        return (
+          <div className="card" style={{ padding: 24 }}>
+            {/* Header */}
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:20, flexWrap:'wrap', gap:12 }}>
+              <div>
+                <h3 className="section-heading">Mutual Fund Analytics</h3>
+                <div style={{ fontSize:12, color:'#8892b0', marginTop:4 }}>
+                  {mfAssets.length} funds · {mfCatData.length} categories
+                </div>
+              </div>
+              {/* MF Portfolio summary */}
+              <div style={{ display:'flex', gap:16, flexWrap:'wrap' }}>
+                {[
+                  { label:'Invested',     value: fmt(totalMFInv),  color:'#8892b0' },
+                  { label:'Present',      value: fmt(totalMFVal),  color:'#c8920a' },
+                  { label:'P&L',          value: (totalMFPL>=0?'+':'')+fmt(totalMFPL), color: totalMFPL>=0?'#16a34a':'#dc2626' },
+                  { label:'Return',       value: (totalMFPLPct>=0?'+':'')+totalMFPLPct.toFixed(2)+'%', color: totalMFPLPct>=0?'#16a34a':'#dc2626' },
+                ].map(s => (
+                  <div key={s.label} style={{ textAlign:'right' }}>
+                    <div style={{ fontSize:11, color:'#8892b0', marginBottom:2 }}>{s.label}</div>
+                    <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:13, fontWeight:600, color:s.color }}>{s.value}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:24 }}>
+              {/* Left: Category donut + list */}
+              <div>
+                <div style={{ fontSize:11, color:'#8892b0', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:12 }}>Category Allocation</div>
+                {/* Mini donut */}
+                <div style={{ display:'flex', justifyContent:'center', marginBottom:16 }}>
+                  <svg viewBox="0 0 160 160" width="140" height="140">
+                    {(() => {
+                      let cum = 0
+                      const r = 60, cx = 80, cy = 80, circ = 2 * Math.PI * r
+                      return mfCatData.map(d => {
+                        const dash = (d.pct / 100) * circ
+                        const offset = circ - (cum / 100) * circ
+                        cum += d.pct
+                        return (
+                          <circle key={d.cat} cx={cx} cy={cy} r={r}
+                            fill="none" stroke={d.color} strokeWidth={26}
+                            strokeDasharray={`${dash} ${circ - dash}`}
+                            strokeDashoffset={offset}
+                            style={{ transform:'rotate(-90deg)', transformOrigin:'center' }}
+                          />
+                        )
+                      })
+                    })()}
+                    <text x="80" y="76" textAnchor="middle" style={{ fontSize:11, fill:'#8892b0', fontFamily:"'Outfit',sans-serif" }}>MF Portfolio</text>
+                    <text x="80" y="92" textAnchor="middle" style={{ fontSize:14, fontWeight:700, fill:'#1a1d2e', fontFamily:"'Cormorant Garamond',serif" }}>{fmts(totalMFVal)}</text>
+                  </svg>
+                </div>
+                {/* Category bars */}
+                <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                  {mfCatData.map(d => (
+                    <div key={d.cat}>
+                      <div style={{ display:'flex', justifyContent:'space-between', marginBottom:3 }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                          <div style={{ width:8, height:8, borderRadius:2, background:d.color, flexShrink:0 }} />
+                          <span style={{ fontSize:12, color:'#1a1d2e', fontWeight:500 }}>{d.cat}</span>
+                          <span style={{ fontSize:10, color:'#b0b8d0' }}>({d.funds.length})</span>
+                        </div>
+                        <span style={{ fontSize:12, fontFamily:"'JetBrains Mono',monospace", fontWeight:600, color:d.color }}>{d.pct.toFixed(1)}%</span>
+                      </div>
+                      <div style={{ height:4, background:'#eef0f8', borderRadius:2, overflow:'hidden' }}>
+                        <div style={{ height:'100%', width:`${d.pct}%`, background:d.color, borderRadius:2, transition:'width 0.5s' }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Right: Fund-wise P&L */}
+              <div>
+                <div style={{ fontSize:11, color:'#8892b0', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:12 }}>Fund-wise Performance</div>
+                <div style={{ display:'flex', flexDirection:'column', gap:8, maxHeight:400, overflowY:'auto' }}>
+                  {mfCatData.map(d => (
+                    <div key={d.cat}>
+                      {/* Category header */}
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
+                        padding:'5px 8px', background:d.color+'12', borderRadius:6, marginBottom:4,
+                        borderLeft:`3px solid ${d.color}` }}>
+                        <span style={{ fontSize:11, fontWeight:600, color:d.color }}>{d.cat}</span>
+                        {d.plPct !== null && (
+                          <span style={{ fontSize:11, fontFamily:"'JetBrains Mono',monospace", fontWeight:600,
+                            color: d.plPct >= 0 ? '#16a34a' : '#dc2626' }}>
+                            {d.plPct >= 0 ? '+' : ''}{d.plPct.toFixed(2)}%
+                          </span>
+                        )}
+                      </div>
+                      {/* Individual funds */}
+                      {d.funds.sort((a,b) => b.value - a.value).map(f => {
+                        const plPct = f._plPct
+                        const plCol = plPct !== null && plPct !== undefined ? (plPct >= 0 ? '#16a34a' : '#dc2626') : '#8892b0'
+                        return (
+                          <div key={f.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
+                            padding:'6px 8px 6px 14px', marginBottom:3,
+                            background:'#f8f9fc', borderRadius:6, border:'1px solid #f0f1f8' }}>
+                            <div style={{ flex:1, minWidth:0 }}>
+                              <div style={{ fontSize:11, fontWeight:500, color:'#1a1d2e', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{f.name}</div>
+                              {f._qty > 0 && (
+                                <div style={{ fontSize:10, color:'#b0b8d0', marginTop:1 }}>{f._qty.toLocaleString()} units{f._avgPrice > 0 ? ` · NAV ₹${f._avgPrice.toFixed(2)}` : ''}</div>
+                              )}
+                            </div>
+                            <div style={{ textAlign:'right', flexShrink:0, marginLeft:8 }}>
+                              <div style={{ fontSize:11, fontFamily:"'JetBrains Mono',monospace", color:'#c8920a', fontWeight:500 }}>{fmt(f.value)}</div>
+                              {plPct !== null && plPct !== undefined && (
+                                <div style={{ fontSize:10, fontFamily:"'JetBrains Mono',monospace", color:plCol, marginTop:1 }}>
+                                  {plPct >= 0 ? '+' : ''}{Number(plPct).toFixed(2)}%
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
     </div>
   )
 }
@@ -734,7 +2027,7 @@ export function NetWorth() {
 // ═══════════════════════════════════════════════════════════════════════════════
 export function Settings({ onToast }) {
   const { session, signOut } = useAuth()
-  const { data, settings, persistSettings, exportJSON, exportCSV, takeSnapshot, importJSON, resetToSample } = useFinance()
+  const { data, settings, persistSettings, exportJSON, exportCSV, takeSnapshot, importJSON, resetToSample, batchUpdateCollection } = useFinance()
   const totals = useTotals()
   const [localCur, setLocalCur] = useState(settings.currency || 'INR')
   const fileRef = useState(null)
@@ -766,6 +2059,126 @@ export function Settings({ onToast }) {
       resetToSample()
       onToast('Data reset to sample', 'warning')
     }
+  }
+
+  // Fix sector/note casing — converts ALL CAPS or irregular casing to Title Case
+  const fixSectorCasing = () => {
+    if (!data?.assets?.length) { onToast('No assets to fix', 'info'); return }
+    const toTitleCase = str => {
+      if (!str) return ''
+      return str
+        .toLowerCase()
+        .split(/([\s&\-\/]+)/)
+        .map(word => word.match(/^[a-z]/) ? word.charAt(0).toUpperCase() + word.slice(1) : word)
+        .join('')
+    }
+    const fixed = data.assets.map(a => ({
+      ...a,
+      note:    toTitleCase(a.note    || ''),
+      _sector: toTitleCase(a._sector || ''),
+    }))
+    const changed = fixed.filter((a, i) => a.note !== data.assets[i].note || a._sector !== data.assets[i]._sector).length
+    batchUpdateCollection('assets', fixed)
+    onToast(changed > 0 ? `Fixed casing on ${changed} holdings` : 'All sector names already correct', 'success')
+  }
+
+  // Fix stock name casing — converts "Tata Consultancy Services Ltd" → "TATA CONSULTANCY SERVICES LTD"
+  const fixNameCasing = () => {
+    if (!data?.assets?.length) { onToast('No assets to fix', 'info'); return }
+    const fixed = data.assets.map(a => ({
+      ...a,
+      name: (a.name || '').toUpperCase(),
+    }))
+    const changed = fixed.filter((a, i) => a.name !== data.assets[i].name).length
+    batchUpdateCollection('assets', fixed)
+    onToast(changed > 0 ? `Fixed name casing on ${changed} holdings` : 'All names already uppercase', 'success')
+  }
+
+  // ── Smart category re-detection for existing assets ────────────────────────
+  const smartCategoryDetect = (name) => {
+    const n = (name || '').toLowerCase().trim()
+    if (!n) return null
+
+    // Special overrides
+    if (n === 'metaietf' || /mirae.?asset.?etf.?nifty.?metal/.test(n)) return 'Stocks & Equities'
+
+    // 1. Fund of Fund (FoF) — not direct equity; wraps other funds
+    const isFoF = /fund of fund/.test(n) || / fof/.test(n) || n.endsWith('fof') || /-fof/.test(n)
+    if (isFoF) {
+      if (/gold|silver|precious|commodity/.test(n)) return 'Gold & Precious Metals'
+      return 'Mutual Funds'
+    }
+
+    // 2. Gold/Silver ETFs & instruments — underlying IS the commodity
+    if (/gold|silver/.test(n)) {
+      if (/etf|bees|exchange traded|goldbees|silverbees/.test(n)) return 'Gold & Precious Metals'
+      if (/savings fund|gold fund|silver fund/.test(n))          return 'Gold & Precious Metals'
+      if (/sgb|sovereign gold bond|digital gold/.test(n))        return 'Gold & Precious Metals'
+      if (!/fund|etf/.test(n))                                   return 'Gold & Precious Metals'
+    }
+    if (/jewel|jewelry|jewellery|ornament|platinum/.test(n) && !/fund|etf/.test(n)) return 'Gold & Precious Metals'
+
+    // 3. Equity ETFs — trade on exchange, track company baskets → Stocks & Equities
+    //    (pharma ETF, bank ETF, smallcap ETF, nifty ETF — all track companies, not commodities)
+    if (/ etf/.test(n) || n.endsWith('etf') || /exchange traded/.test(n)) return 'Stocks & Equities'
+
+    // 4. Regular Mutual Funds (non-ETF) → Mutual Funds
+    if (/fund/.test(n)) return 'Mutual Funds'
+    if (/scheme|folio|sip|elss|nfo|direct plan|regular plan|growth plan|dividend plan|idcw/.test(n)) return 'Mutual Funds'
+    if (/large.?cap|mid.?cap|small.?cap|flexi.?cap|multi.?cap|balanced advantage|hybrid|debt|liquid|overnight|arbitrage|index|nifty|sensex|contra|thematic|momentum|consumption|international|global|overseas/.test(n)) return 'Mutual Funds'
+    if (/mirae|nippon|edelweiss|whiteoak|pgim|invesco|baroda.?bnp|taurus|jm.?financial/.test(n)) return 'Mutual Funds'
+
+    // 5. Stocks & Equities (only after MF/Gold/ETF ruled out)
+    if (/share|stock|nse|bse|zerodha|groww|demat|ipo|smallcase/.test(n)) return 'Stocks & Equities'
+    if (/infy|tcs|reliance|wipro|hcl|ongc|tatamotors|bajaj|tatasteel|infosys/.test(n)) return 'Stocks & Equities'
+    if (/equity/.test(n) && !/fund|plan/.test(n)) return 'Stocks & Equities'
+
+    // 6. Other asset classes
+    if (/ppf|public provident|epf|employee provident|provident fund|epfo|gratuity|superannuation/.test(n)) return 'PPF / EPF'
+    if (/ssa|sukanya|sukanya samriddhi|samriddhi yojana|girl child savings|beti bachao/.test(n)) return 'SSA (Sukanya Samriddhi)'
+    if (/nps|national pension|atal pension|\bapy\b|pran/.test(n)) return 'NPS'
+    if (/ncd|non.?convertible debenture|\bbonds?\b|debenture|g.?sec|government securities|t.?bill|treasury bill|rbi bond|54ec|bharat bond|corporate bond|zero coupon|gilt/.test(n)) return 'Bonds & Debentures'
+    if (/\bfd\b|fixed deposit|recurring deposit|\brd\b|term deposit|scss|senior citizen savings|\bkvp\b|\bnsc\b|national savings|monthly income scheme|post office/.test(n)) return 'Fixed Deposits'
+    if (/savings account|current account|bank account|\bcash\b|wallet|emergency fund|salary account/.test(n)) return 'Cash & Equivalents'
+    if (/flat|apartment|house|villa|plot|\bland\b|property|real estate|\bhome\b|office|shop|warehouse|commercial|residential|bungalow|\bsite\b|\bbhk\b/.test(n)) return 'Real Estate'
+    if (/bitcoin|btc|ethereum|\beth\b|crypto|usdt|\bbnb\b|solana|\bxrp\b|polygon|matic|dogecoin|usdc|web3|defi|\bnft\b|wazirx|coinswitch|coindcx|zebpay/.test(n)) return 'Cryptocurrency'
+    if (/\bcar\b|bike|motorcycle|scooter|vehicle|suv|sedan|hatchback|truck|two.?wheeler|four.?wheeler|\bev\b|activa|swift|creta|nexon|tiago/.test(n)) return 'Vehicles'
+    if (/business|startup|company equity|unlisted|angel invest|pre.?ipo|venture|esop|employee stock/.test(n)) return 'Business Assets'
+    return null
+  }
+
+  const [catFixModal, setCatFixModal] = useState(false)
+  const [catFixItems, setCatFixItems] = useState([])   // [{asset, suggested, selected, override}]
+
+  const scanCategories = () => {
+    if (!data?.assets?.length) { onToast('No assets found', 'info'); return }
+    const ASSET_CATS_ALL = ['Cash & Equivalents','Fixed Deposits','Bonds & Debentures','Mutual Funds',
+      'Stocks & Equities','PPF / EPF','NPS','Real Estate','Gold & Precious Metals',
+      'Cryptocurrency','Vehicles','Business Assets','Others']
+    const items = data.assets
+      .map(a => {
+        const suggested = smartCategoryDetect(a.name)
+        const changed = suggested && suggested !== a.category
+        return { asset: a, suggested, changed, selected: changed, override: suggested || a.category }
+      })
+      .filter(x => x.changed)  // only show assets where suggestion differs from current
+    if (items.length === 0) {
+      onToast('All categories look correct — nothing to fix!', 'success')
+      return
+    }
+    setCatFixItems(items)
+    setCatFixModal(true)
+  }
+
+  const applyCategoryFixes = () => {
+    const toFix = catFixItems.filter(x => x.selected)
+    if (!toFix.length) { setCatFixModal(false); return }
+    const fixMap = {}
+    toFix.forEach(x => { fixMap[x.asset.id] = x.override })
+    const fixed = data.assets.map(a => fixMap[a.id] ? { ...a, category: fixMap[a.id] } : a)
+    batchUpdateCollection('assets', fixed)
+    setCatFixModal(false)
+    onToast(`Updated category for ${toFix.length} asset${toFix.length > 1 ? 's' : ''}`, 'success')
   }
 
   const printReport = () => {
@@ -895,6 +2308,143 @@ export function Settings({ onToast }) {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Data Maintenance */}
+      <div className="card" style={{ padding: 28 }}>
+        <h3 style={{ fontFamily: "'Cormorant Garamond',serif", fontSize: 20, color: '#1a1d2e', marginBottom: 8 }}>Data Maintenance</h3>
+        <p style={{ fontSize: 13, color: '#8892b0', marginBottom: 20 }}>
+          Fix formatting issues in your existing holdings data.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* Fix Stock Name Casing */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#f8f9fc', borderRadius: 10, border: '1px solid #eef0f8' }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 500, color: '#1a1d2e', marginBottom: 3 }}>Fix Stock Name Casing</div>
+              <div style={{ fontSize: 12, color: '#8892b0' }}>
+                Converts stock names like "Tata Consultancy Services Ltd" → "TATA CONSULTANCY SERVICES LTD". Keeps all holdings consistent across brokers.
+              </div>
+            </div>
+            <button
+              className="btn btn-outline btn-sm"
+              style={{ flexShrink: 0, marginLeft: 16 }}
+              onClick={fixNameCasing}>
+              Fix Now
+            </button>
+          </div>
+
+          {/* Fix Sector Casing */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#f8f9fc', borderRadius: 10, border: '1px solid #eef0f8' }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 500, color: '#1a1d2e', marginBottom: 3 }}>Fix Sector Name Casing</div>
+              <div style={{ fontSize: 12, color: '#8892b0' }}>
+                Converts ALL CAPS sector names (e.g. AUTO ANCILLARY) to Title Case (Auto Ancillary) across all holdings.
+              </div>
+            </div>
+            <button
+              className="btn btn-outline btn-sm"
+              style={{ flexShrink: 0, marginLeft: 16 }}
+              onClick={fixSectorCasing}>
+              Fix Now
+            </button>
+          </div>
+
+          {/* Fix Asset Categories */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#f8f9fc', borderRadius: 10, border: '1px solid #eef0f8' }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 500, color: '#1a1d2e', marginBottom: 3 }}>Fix Asset Categories</div>
+              <div style={{ fontSize: 12, color: '#8892b0' }}>
+                Scans all existing assets and intelligently suggests correct categories (Stocks, MF, FD, Bonds, Gold, etc.) based on the asset name. Review and apply individually.
+              </div>
+            </div>
+            <button
+              className="btn btn-outline btn-sm"
+              style={{ flexShrink: 0, marginLeft: 16 }}
+              onClick={scanCategories}>
+              Scan & Fix
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Category Fix Review Modal */}
+      {catFixModal && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+          <div style={{ background:'#fff', borderRadius:16, width:'100%', maxWidth:640, maxHeight:'85vh', display:'flex', flexDirection:'column', boxShadow:'0 20px 60px rgba(0,0,0,0.2)' }}>
+            {/* Header */}
+            <div style={{ padding:'20px 24px', borderBottom:'1px solid #eef0f8' }}>
+              <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:20, color:'#1a1d2e', fontWeight:700, marginBottom:4 }}>
+                ✨ Fix Asset Categories
+              </div>
+              <div style={{ fontSize:13, color:'#8892b0' }}>
+                {catFixItems.length} asset{catFixItems.length !== 1 ? 's' : ''} found with potentially incorrect categories.
+                Review each suggestion and select which ones to apply.
+              </div>
+            </div>
+
+            {/* Asset list */}
+            <div style={{ flex:1, overflowY:'auto', padding:'16px 24px', display:'flex', flexDirection:'column', gap:10 }}>
+              {catFixItems.map((item, idx) => (
+                <div key={item.asset.id}
+                  style={{ padding:'14px 16px', borderRadius:10, border:`1px solid ${item.selected ? 'rgba(200,146,10,0.3)' : '#eef0f8'}`,
+                    background: item.selected ? 'rgba(200,146,10,0.04)' : '#f8f9fc', transition:'all 0.15s' }}>
+                  <div style={{ display:'flex', alignItems:'flex-start', gap:12 }}>
+                    {/* Checkbox */}
+                    <div onClick={() => setCatFixItems(prev => prev.map((x,i) => i===idx ? {...x, selected:!x.selected} : x))}
+                      style={{ width:18, height:18, borderRadius:4, border:`2px solid ${item.selected?'#c8920a':'#d0d4e0'}`,
+                        background: item.selected ? '#c8920a' : 'transparent', flexShrink:0, cursor:'pointer', marginTop:2,
+                        display:'flex', alignItems:'center', justifyContent:'center' }}>
+                      {item.selected && <span style={{ color:'#fff', fontSize:11 }}>✓</span>}
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      {/* Asset name */}
+                      <div style={{ fontSize:14, fontWeight:600, color:'#1a1d2e', marginBottom:8, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                        {item.asset.name}
+                      </div>
+                      {/* Category change */}
+                      <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                        <span style={{ fontSize:11, fontWeight:500, color:'#f06a6a', background:'rgba(240,106,106,0.08)',
+                          padding:'3px 10px', borderRadius:20, textDecoration:'line-through' }}>
+                          {item.asset.category}
+                        </span>
+                        <span style={{ fontSize:14, color:'#8892b0' }}>→</span>
+                        {/* Override dropdown */}
+                        <select
+                          value={item.override}
+                          onChange={e => setCatFixItems(prev => prev.map((x,i) => i===idx ? {...x, override:e.target.value} : x))}
+                          style={{ fontSize:12, fontWeight:600, color:'#16a34a', background:'rgba(22,163,74,0.08)',
+                            border:'1px solid rgba(22,163,74,0.25)', borderRadius:20, padding:'3px 10px', cursor:'pointer' }}>
+                          {['Cash & Equivalents','Fixed Deposits','Bonds & Debentures','Mutual Funds',
+                            'Stocks & Equities','PPF / EPF','NPS','Real Estate','Gold & Precious Metals',
+                            'Cryptocurrency','Vehicles','Business Assets','Others'].map(c => (
+                            <option key={c} value={c}>{c}</option>
+                          ))}
+                        </select>
+                        {item.suggested === item.override && (
+                          <span style={{ fontSize:10, color:'#8892b0', fontStyle:'italic' }}>auto-detected</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding:'16px 24px', borderTop:'1px solid #eef0f8', display:'flex', justifyContent:'space-between', alignItems:'center', gap:12 }}>
+              <div style={{ fontSize:12, color:'#8892b0' }}>
+                {catFixItems.filter(x => x.selected).length} of {catFixItems.length} selected
+              </div>
+              <div style={{ display:'flex', gap:10 }}>
+                <button className="btn btn-outline" onClick={() => setCatFixModal(false)}>Cancel</button>
+                <button className="btn btn-gold" onClick={applyCategoryFixes}
+                  disabled={catFixItems.filter(x => x.selected).length === 0}>
+                  Apply {catFixItems.filter(x => x.selected).length > 0 ? catFixItems.filter(x => x.selected).length : ''} Fix{catFixItems.filter(x => x.selected).length !== 1 ? 'es' : ''}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
