@@ -7,7 +7,7 @@ import AuthScreen                      from './components/AuthScreen'
 import LandingPage                     from './components/LandingPage'
 import ResetPasswordScreen             from './components/ResetPasswordScreen'
 import { Dashboard, Assets, Liabilities, CashFlow, Analytics, NetWorth, Settings } from './components/Tabs'
-import { FinancialProfile } from './components/FinancialProfile'
+import { FinancialProfile, FinancialPlanTab, ProfileDB } from './components/FinancialProfile'
 import { TaxHarvest } from './components/TaxHarvest'
 import { TABS }                        from './utils/constants'
 import { formatCompact, formatCurrency } from './utils/helpers'
@@ -28,8 +28,16 @@ function Shell() {
   const [activeTab,   setActiveTab]            = useState('dashboard')
   const [sidebarOpen, setSidebarOpen]          = useState(true)
   const [notif,       setNotif]                = useState(null)
+  const [showOnboarding, setShowOnboarding]    = useState(false)
 
   const toast = useCallback((msg, type = 'success') => setNotif({ msg, type }), [])
+
+  // Expose tab setter globally so child components can navigate without prop drilling
+  window.__wrSetTab = setActiveTab
+
+  // Check if profile wizard has been completed (has AI plan)
+  const profileData = session?.userId ? ProfileDB.get(session.userId) : null
+  const hasCompletedProfile = Boolean(profileData?._aiPlan)
 
   const cur  = settings?.currency || 'INR'
   const fmts = (v) => formatCompact(v, cur)
@@ -45,7 +53,8 @@ function Shell() {
     cashflow:    <CashFlow />,
     analytics:   <Analytics />,
     networth:    <NetWorth />,
-    profile:     <FinancialProfile />,
+    profile:     <FinancialProfile onComplete={() => { setActiveTab('finplan'); setShowOnboarding(false) }} />,
+    finplan:     <FinancialPlanTab />,
     taxharvest:  <TaxHarvest />,
     settings:    <Settings onToast={toast} />,
   }
@@ -57,6 +66,14 @@ function Shell() {
   }
 
   const activeTabObj = TABS.find(t => t.id === activeTab)
+
+  // Show full-screen onboarding wizard for first-time users
+  if (showOnboarding || (!hasCompletedProfile && !showOnboarding && activeTab !== 'profile')) {
+    // Redirect new users to profile wizard automatically
+    if (!hasCompletedProfile && activeTab === 'dashboard' && !showOnboarding) {
+      // Don't auto-redirect — show a welcome banner instead
+    }
+  }
 
   return (
     <div style={{ display:'flex', minHeight:'100vh', background:'#f5f6fa' }}>
@@ -169,6 +186,18 @@ function Shell() {
         {/* Page content */}
         <main style={{ flex:1, padding:'28px 32px', overflowY:'auto', background:'#f5f6fa' }}>
           <div key={activeTab} className="fade-up">
+            {/* First-time onboarding banner — shown until profile+plan is complete */}
+            {!hasCompletedProfile && activeTab !== 'profile' && (
+              <div style={{ background:'linear-gradient(135deg,rgba(200,146,10,0.08),rgba(200,146,10,0.02))', border:'1px solid rgba(200,146,10,0.25)', borderRadius:14, padding:'18px 22px', marginBottom:20, display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:12 }}>
+                <div>
+                  <div style={{ fontSize:15, fontWeight:700, color:'#1a1d2e', marginBottom:3 }}>👋 Welcome to WealthRadar! Set up your Financial Plan</div>
+                  <div style={{ fontSize:13, color:'#8892b0' }}>Complete your profile once to get a personalised AI financial plan, goal tracking and investment recommendations.</div>
+                </div>
+                <button className="btn btn-gold" onClick={() => setActiveTab('profile')} style={{ flexShrink:0 }}>
+                  ✨ Get Started →
+                </button>
+              </div>
+            )}
             {TAB_COMPONENTS[activeTab]}
           </div>
         </main>

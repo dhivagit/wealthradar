@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Modal, Field } from './UI'
 import { ASSET_CATS, LIABILITY_CATS, INCOME_CATS, EXPENSE_CATS } from '../utils/constants'
 import { CURRENCIES } from '../utils/constants'
@@ -12,99 +12,162 @@ const CATS = {
   expenses:    EXPENSE_CATS,
 }
 
-// ── Smart auto-categorization rules ──────────────────────────────────────────
-// Matches keywords in the asset name and returns the best category
+// Categories that show equity-specific fields (Qty, Avg Price, Invested, Present Value, Source)
+const EQUITY_CATS = new Set(['Stocks & Equities', 'Mutual Funds', 'Gold & Precious Metals', 'Cryptocurrency'])
+
+// ── Smart auto-categorization ─────────────────────────────────────────────────
 function smartCategory(name, collection) {
   if (collection !== 'assets') return null
-    const n = (name || '').toLowerCase().trim()
-    if (!n) return null
+  const n = (name || '').toLowerCase().trim()
+  if (!n) return null
 
-    // Special overrides
-    if (n === 'metaietf' || /mirae.?asset.?etf.?nifty.?metal/.test(n)) return 'Stocks & Equities'
+  if (n === 'metaietf' || /mirae.?asset.?etf.?nifty.?metal/.test(n)) return 'Stocks & Equities'
 
-    // 1. Fund of Fund (FoF) — not direct equity; wraps other funds
-    const isFoF = /fund of fund/.test(n) || / fof/.test(n) || n.endsWith('fof') || /-fof/.test(n)
-    if (isFoF) {
-      if (/gold|silver|precious|commodity/.test(n)) return 'Gold & Precious Metals'
-      return 'Mutual Funds'
-    }
+  const isFoF = /fund of fund/.test(n) || / fof/.test(n) || n.endsWith('fof') || /-fof/.test(n)
+  if (isFoF) {
+    if (/gold|silver|precious|commodity/.test(n)) return 'Gold & Precious Metals'
+    return 'Mutual Funds'
+  }
 
-    // 2. Gold/Silver ETFs & instruments — underlying IS the commodity
-    if (/gold|silver/.test(n)) {
-      if (/etf|bees|exchange traded|goldbees|silverbees/.test(n)) return 'Gold & Precious Metals'
-      if (/savings fund|gold fund|silver fund/.test(n))          return 'Gold & Precious Metals'
-      if (/sgb|sovereign gold bond|digital gold/.test(n))        return 'Gold & Precious Metals'
-      if (!/fund|etf/.test(n))                                   return 'Gold & Precious Metals'
-    }
-    if (/jewel|jewelry|jewellery|ornament|platinum/.test(n) && !/fund|etf/.test(n)) return 'Gold & Precious Metals'
+  if (/gold|silver/.test(n)) {
+    if (/etf|bees|exchange traded|goldbees|silverbees/.test(n)) return 'Gold & Precious Metals'
+    if (/savings fund|gold fund|silver fund/.test(n))          return 'Gold & Precious Metals'
+    if (/sgb|sovereign gold bond|digital gold/.test(n))        return 'Gold & Precious Metals'
+    if (!/fund|etf/.test(n))                                   return 'Gold & Precious Metals'
+  }
+  if (/jewel|jewelry|jewellery|ornament|platinum/.test(n) && !/fund|etf/.test(n)) return 'Gold & Precious Metals'
 
-    // 3. Equity ETFs — trade on exchange, track company baskets → Stocks & Equities
-    //    (pharma ETF, bank ETF, smallcap ETF, nifty ETF — all track companies, not commodities)
-    if (/ etf/.test(n) || n.endsWith('etf') || /exchange traded/.test(n)) return 'Stocks & Equities'
+  if (/ etf/.test(n) || n.endsWith('etf') || /exchange traded/.test(n)) return 'Stocks & Equities'
 
-    // 4. Regular Mutual Funds (non-ETF) → Mutual Funds
-    if (/fund/.test(n)) return 'Mutual Funds'
-    if (/scheme|folio|sip|elss|nfo|direct plan|regular plan|growth plan|dividend plan|idcw/.test(n)) return 'Mutual Funds'
-    if (/large.?cap|mid.?cap|small.?cap|flexi.?cap|multi.?cap|balanced advantage|hybrid|debt|liquid|overnight|arbitrage|index|nifty|sensex|contra|thematic|momentum|consumption|international|global|overseas/.test(n)) return 'Mutual Funds'
-    if (/mirae|nippon|edelweiss|whiteoak|pgim|invesco|baroda.?bnp|taurus|jm.?financial/.test(n)) return 'Mutual Funds'
+  if (/fund/.test(n)) return 'Mutual Funds'
+  if (/scheme|folio|sip|elss|nfo|direct plan|regular plan|growth plan|dividend plan|idcw/.test(n)) return 'Mutual Funds'
+  if (/large.?cap|mid.?cap|small.?cap|flexi.?cap|multi.?cap|balanced advantage|hybrid|debt|liquid|overnight|arbitrage|index|nifty|sensex|contra|thematic|momentum|consumption|international|global|overseas/.test(n)) return 'Mutual Funds'
+  if (/mirae|nippon|edelweiss|whiteoak|pgim|invesco|baroda.?bnp|taurus|jm.?financial/.test(n)) return 'Mutual Funds'
 
-    // 5. Stocks & Equities (only after MF/Gold/ETF ruled out)
-    if (/share|stock|nse|bse|zerodha|groww|demat|ipo|smallcase/.test(n)) return 'Stocks & Equities'
-    if (/infy|tcs|reliance|wipro|hcl|ongc|tatamotors|bajaj|tatasteel|infosys/.test(n)) return 'Stocks & Equities'
-    if (/equity/.test(n) && !/fund|plan/.test(n)) return 'Stocks & Equities'
+  if (/share|stock|nse|bse|zerodha|groww|demat|ipo|smallcase/.test(n)) return 'Stocks & Equities'
+  if (/infy|tcs|reliance|wipro|hcl|ongc|tatamotors|bajaj|tatasteel|infosys/.test(n)) return 'Stocks & Equities'
+  if (/equity/.test(n) && !/fund|plan/.test(n)) return 'Stocks & Equities'
 
-    // 6. Other asset classes
-    if (/ppf|public provident|epf|employee provident|provident fund|epfo|gratuity|superannuation/.test(n)) return 'PPF / EPF'
+  if (/ppf|public provident|epf|employee provident|provident fund|epfo|gratuity|superannuation/.test(n)) return 'PPF / EPF'
   if (/ssa|sukanya|sukanya samriddhi|samriddhi yojana|girl child savings|beti bachao/.test(n)) return 'SSA (Sukanya Samriddhi)'
-    if (/nps|national pension|atal pension|\bapy\b|pran/.test(n)) return 'NPS'
-    if (/ncd|non.?convertible debenture|\bbonds?\b|debenture|g.?sec|government securities|t.?bill|treasury bill|rbi bond|54ec|bharat bond|corporate bond|zero coupon|gilt/.test(n)) return 'Bonds & Debentures'
-    if (/\bfd\b|fixed deposit|recurring deposit|\brd\b|term deposit|scss|senior citizen savings|\bkvp\b|\bnsc\b|national savings|monthly income scheme|post office/.test(n)) return 'Fixed Deposits'
-    if (/savings account|current account|bank account|\bcash\b|wallet|emergency fund|salary account/.test(n)) return 'Cash & Equivalents'
-    if (/flat|apartment|house|villa|plot|\bland\b|property|real estate|\bhome\b|office|shop|warehouse|commercial|residential|bungalow|\bsite\b|\bbhk\b/.test(n)) return 'Real Estate'
-    if (/bitcoin|btc|ethereum|\beth\b|crypto|usdt|\bbnb\b|solana|\bxrp\b|polygon|matic|dogecoin|usdc|web3|defi|\bnft\b|wazirx|coinswitch|coindcx|zebpay/.test(n)) return 'Cryptocurrency'
-    if (/\bcar\b|bike|motorcycle|scooter|vehicle|suv|sedan|hatchback|truck|two.?wheeler|four.?wheeler|\bev\b|activa|swift|creta|nexon|tiago/.test(n)) return 'Vehicles'
-    if (/business|startup|company equity|unlisted|angel invest|pre.?ipo|venture|esop|employee stock/.test(n)) return 'Business Assets'
-    return null
+  if (/nps|national pension|atal pension|\bapy\b|pran/.test(n)) return 'NPS'
+  if (/ncd|non.?convertible debenture|\bbonds?\b|debenture|g.?sec|government securities|t.?bill|treasury bill|rbi bond|54ec|bharat bond|corporate bond|zero coupon|gilt/.test(n)) return 'Bonds & Debentures'
+  if (/\bfd\b|fixed deposit|recurring deposit|\brd\b|term deposit|scss|senior citizen savings|\bkvp\b|\bnsc\b|national savings|monthly income scheme|post office/.test(n)) return 'Fixed Deposits'
+  if (/savings account|current account|bank account|\bcash\b|wallet|emergency fund|salary account/.test(n)) return 'Cash & Equivalents'
+  if (/flat|apartment|house|villa|plot|\bland\b|property|real estate|\bhome\b|office|shop|warehouse|commercial|residential|bungalow|\bsite\b|\bbhk\b/.test(n)) return 'Real Estate'
+  if (/bitcoin|btc|ethereum|\beth\b|crypto|usdt|\bbnb\b|solana|\bxrp\b|polygon|matic|dogecoin|usdc|web3|defi|\bnft\b|wazirx|coinswitch|coindcx|zebpay/.test(n)) return 'Cryptocurrency'
+  if (/\bcar\b|bike|motorcycle|scooter|vehicle|suv|sedan|hatchback|truck|two.?wheeler|four.?wheeler|\bev\b|activa|swift|creta|nexon|tiago/.test(n)) return 'Vehicles'
+  if (/business|startup|company equity|unlisted|angel invest|pre.?ipo|venture|esop|employee stock/.test(n)) return 'Business Assets'
+  return null
+}
+
+// ── Sector auto-detection from stock name ────────────────────────────────────
+function detectSector(name) {
+  const n = (name || '').toLowerCase()
+  const rules = [
+    [['bank','banking','indusind','federal bank','yes bank','bandhan','au small','dcb bank','karur','city union','tmb','south indian','hdb financial','rbl bank','csb bank','hdfc bank','icici bank','axis bank','kotak mah','sbi bank'], 'Banking'],
+    [['insurance','life ins','general ins','bajaj allianz','icici pru','hdfc life','sbi life','star health','niva bupa','go digit'], 'Insurance'],
+    [['power finance','pfc','rec limited','lic housing','manappuram','muthoot','sphoorty','bajaj fin','cholaman','shriram','mahindra fin','pnb housing','can fin','aptus','home first','aditya birla cap','iifl','abcapital'], 'Financial Services'],
+    [['finance','financial'], 'Financial Services'],
+    [['tata consultancy','tcs','infosys','wipro','hcl tech','tech mahindra','ltimindtree','mphasis','persistent','coforge','hexaware','zensar','mastek','kpit','happiest','birlasoft','saksoft','tanla','tata elxsi','cyient','sasken','sonata','intellect design','nucleus software','rategain'], 'Software & IT'],
+    [['mahindra','maruti','tata motors','ashok leyland','hero moto','bajaj auto','tvs motor','eicher','bosch','mrf','apollo tyre','ceat','motherson','endurance','sona bl','uno minda','rane','samvardhana'], 'Automobiles'],
+    [['healthcare','ttk health','apollo hosp','fortis','max health','narayana','aster','global health','rainbow','kims','yatharth','metropolis','dr lal','thyrocare','vijaya diag'], 'Healthcare'],
+    [['pharma','cipla','sun pharma','drreddy','dr. reddy','biocon','divis','lupin','zydus','cadila','abbott','pfizer','natco','alkem','torrent pharma','ipca','laurus','granules','glenmark','mankind','ajanta','eris','suven'], 'Pharmaceuticals'],
+    [['oil','petroleum','ongc','bpcl','hpcl','ioc','indian oil','gail','castrol','gujarat gas','indraprastha','mahanagar gas','petronet','aegis logistics'], 'Oil & Gas'],
+    [['coal india','ntpc','adani power','tata power','torrent power','cesc','jsw energy','power grid','sjvn','nhpc','ireda','waaree','premier energies'], 'Energy & Power'],
+    [['steel','tata steel','jsw steel','sail','jspl','jindal','hindalco','vedanta','nalco','moil','nmdc','hindustan zinc'], 'Metals & Mining'],
+    [['hindustan unilever','hul','itc','dabur','godrej consumer','marico','nestle','britannia','colgate','emami','jyothy','varun bev','radico','united spirits','tilaknagar','globus spirits'], 'FMCG'],
+    [['larsen','l&t','siemens','abb','bhel','cummins','thermax','bharat forge','grindwell','timken','schaeffler','skf','elgi','kirloskar','honeywell','voltas','blue star','kec international','kalpataru','ncc'], 'Capital Goods'],
+    [['prakash pipes','supreme industries','astral','finolex','prince pipes','apollo pipes'], 'Industrials'],
+    [['pipes','fittings','valves'], 'Industrials'],
+    [['airtel','jio','vodafone','bharti','tata comm','sterlite tech','hfcl','route mobile'], 'Telecom'],
+    [['dlf','godrej prop','oberoi','prestige','brigade','sobha','macrotech','lodha','kolte patil','phoenix','puravankara'], 'Real Estate'],
+    [['ultratech','shree cement','acc','ambuja','dalmia','jk cement','ramco','birla corp','heidelberg'], 'Cement'],
+    [['pidilite','asian paint','berger','kansai','nerolac','deepak nitrite','aarti ind','navin fluorine','srf','clean science','galaxy surf','fine organics','vinati organics'], 'Chemicals'],
+    [['avenue supermarts','dmart','trent','v-mart','metro brands','bata','relaxo','titan','kalyan','vedant','manyavar'], 'Retail & Consumer'],
+    [['adani port','concor','blue dart','gati','allcargo','delhivery','mahindra logistics'], 'Logistics'],
+    [['nse','bse','cdsl','nsdl','cams','computer age','kfin tech','crisil','care ratings','icra','angel one','motilal','iifl sec','5paisa','geojit'], 'Capital Markets'],
+    [['textile','fabric','yarn','raymond','arvind','vardhman','welspun','trident'], 'Textiles'],
+    [['fertiliser','fertilizer','agri','coromandel','chambal','deepak fert','pi industries','dhanuka','rallis'], 'Agriculture'],
+    [['media','entertainment','zee','sony','network18','sun tv','pvr','inox','saregama'], 'Media & Entertainment'],
+    [['defence','defense','aerospace','hal','bharat electronics','bharat dynamics','mazagon','cochin shipyard','garden reach'], 'Defence'],
+  ]
+  for (const [keywords, sector] of rules) {
+    if (keywords.some(k => n.includes(k))) return sector
+  }
+  return ''
 }
 
 const PLACEHOLDER_NAME = {
-  assets:      'e.g. HDFC Savings Account',
+  assets:      'e.g. INFY, HDFC BANK, Axis Midcap Fund',
   liabilities: 'e.g. SBI Home Loan',
   income:      'e.g. Monthly Salary',
   expenses:    'e.g. Rent / EMI',
 }
 
+const BROKERS = ['Zerodha','Groww','ICICI Direct','INDMoney','MF Central','Kuvera','HDFC Securities','Kotak Securities','Angel One','5Paisa','Upstox','NSDL/CDSL','EPFO','Post Office','SBI','HDFC Bank','Other']
+
 export default function EntryModal({ collection, item, onClose, onSaved }) {
   const { addItem, updateItem, settings } = useFinance()
-  const isEdit    = Boolean(item?.id)
-  const cats      = CATS[collection]
-  const isCF      = collection === 'income' || collection === 'expenses'
-  const isLiab    = collection === 'liabilities'
+  const isEdit     = Boolean(item?.id)
+  const cats       = CATS[collection]
+  const isCF       = collection === 'income' || collection === 'expenses'
+  const isLiab     = collection === 'liabilities'
   const currSymbol = CURRENCIES.find(c => c.code === settings.currency)?.symbol || '₹'
 
   const [form, setForm] = useState({
-    name:        item?.name        || '',
-    category:    item?.category    || cats[0],
-    value:       item?.value       || '',
-    monthly:     item?.monthly     || '',
-    institution: item?.institution || '',
-    rate:        item?.rate        || '',
-    note:        item?.note        || '',
+    name:          item?.name          || '',
+    category:      item?.category      || cats[0],
+    value:         item?.value         || '',
+    monthly:       item?.monthly       || '',
+    institution:   item?.institution   || '',
+    rate:          item?.rate          || '',
+    note:          item?.note          || item?._sector || '',
+    // Equity-specific fields
+    qty:           item?._qty          || '',
+    avgPrice:      item?._avgPrice     || '',
+    investedValue: item?._investedValue|| '',
   })
-  const [saving, setSaving] = useState(false)
+  const [saving, setSaving]           = useState(false)
   const [autoSuggested, setAutoSuggested] = useState(false)
 
   const f = (k, v) => setForm(p => ({ ...p, [k]: v }))
 
-  // Auto-categorize when name changes (only for new entries, not edits)
+  // Derived: is this an equity-type asset?
+  const isEquityCat = EQUITY_CATS.has(form.category)
+  const isMF        = form.category === 'Mutual Funds'
+
+  // Auto-calc invested value when qty × avgPrice changes
+  useEffect(() => {
+    const q = parseFloat(form.qty)
+    const a = parseFloat(form.avgPrice)
+    if (q > 0 && a > 0) {
+      f('investedValue', String(Math.round(q * a * 100) / 100))
+    }
+  }, [form.qty, form.avgPrice])
+
+  // Auto-calc P&L %
+  const invested = parseFloat(form.investedValue) || 0
+  const present  = parseFloat(form.value) || 0
+  const plPct    = invested > 0 && present > 0 ? ((present - invested) / invested * 100) : null
+  const plAbs    = invested > 0 && present > 0 ? present - invested : null
+
+  // Auto-categorize + auto-detect sector on name change
   const handleNameChange = (v) => {
     f('name', v)
     if (isEdit) return
     const suggested = smartCategory(v, collection)
+    const sector    = collection === 'assets' ? detectSector(v) : ''
     if (suggested && cats.includes(suggested)) {
-      setForm(p => ({ ...p, name: v, category: suggested }))
+      setForm(p => ({
+        ...p,
+        name:     v,
+        category: suggested,
+        note:     sector || p.note,   // auto-fill sector only if detected and not already set
+      }))
       setAutoSuggested(true)
     } else {
+      setForm(p => ({ ...p, name: v, note: sector || p.note }))
       setAutoSuggested(false)
     }
   }
@@ -114,16 +177,32 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
     setSaving(true)
     await new Promise(r => setTimeout(r, 200))
 
+    const qty      = parseFloat(form.qty)      || 0
+    const avgPrice = parseFloat(form.avgPrice) || 0
+    const invVal   = parseFloat(form.investedValue) || (qty > 0 && avgPrice > 0 ? qty * avgPrice : 0)
+    const presVal  = parseFloat(form.value) || 0
+    const plPctFin = invVal > 0 && presVal > 0 ? ((presVal - invVal) / invVal * 100) : null
+
     const entry = {
       id:          item?.id || uid(),
-      name:        form.name.trim(),
+      name:        form.name.trim().toUpperCase(),
       category:    form.category,
       institution: form.institution.trim(),
       note:        form.note.trim(),
       ...(isCF
         ? { monthly: parseFloat(form.monthly) || 0 }
-        : { value:   parseFloat(form.value)   || 0 }),
+        : { value:   presVal || invVal }),       // fallback to invested if no present value
       ...(isLiab && form.rate ? { rate: parseFloat(form.rate) } : {}),
+      // Equity-specific metadata (only saved for equity/MF categories)
+      ...(isEquityCat && {
+        _qty:           qty,
+        _avgPrice:      avgPrice,
+        _investedValue: invVal,
+        _ltp:           qty > 0 && presVal > 0 ? Math.round(presVal / qty * 100) / 100 : 0,
+        _plPct:         plPctFin,
+        _isMF:          isMF,
+        _sector:        form.note.trim(),
+      }),
     }
 
     if (isEdit) updateItem(collection, entry)
@@ -139,18 +218,20 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
   return (
     <Modal title={title} onClose={onClose}>
       <div>
+
+        {/* Name */}
         <Field label="Name / Description">
           <input className="input" value={form.name} onChange={e => handleNameChange(e.target.value)}
             placeholder={PLACEHOLDER_NAME[collection]} autoFocus />
         </Field>
 
+        {/* Category */}
         <Field label="Category">
           {autoSuggested && (
             <div style={{ fontSize:11, color:'#059669', background:'rgba(5,150,105,0.08)',
               border:'1px solid rgba(5,150,105,0.2)', borderRadius:6, padding:'4px 10px',
               marginBottom:6, display:'flex', alignItems:'center', gap:6 }}>
-              <span>✨</span>
-              <span>Auto-detected from name — change below if needed</span>
+              <span>✨</span><span>Auto-detected — change below if needed</span>
             </div>
           )}
           <select className="input" value={form.category}
@@ -159,50 +240,166 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
           </select>
         </Field>
 
-        {isCF ? (
+        {/* ── Equity / MF specific fields ─────────────────────────── */}
+        {!isCF && !isLiab && isEquityCat && (
+          <>
+            <div style={{ background:'rgba(91,143,249,0.04)', border:'1px solid rgba(91,143,249,0.15)',
+              borderRadius:10, padding:'14px 16px', marginBottom:16 }}>
+              <div style={{ fontSize:11, fontWeight:600, color:'#5b8ff9', letterSpacing:'0.05em',
+                textTransform:'uppercase', marginBottom:12 }}>
+                {isMF ? '📊 Fund Details' : '📈 Stock / ETF Details'}
+              </div>
+
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                {/* Qty / Units */}
+                <Field label={isMF ? 'Units' : 'Qty / Shares'}>
+                  <div style={{ position:'relative' }}>
+                    <input className="input" type="number" min="0" step="any"
+                      value={form.qty} onChange={e => f('qty', e.target.value)}
+                      placeholder={isMF ? 'e.g. 152.345' : 'e.g. 25'}
+                      style={{ width:'100%', boxSizing:'border-box' }} />
+                  </div>
+                </Field>
+
+                {/* Avg Buy Price / NAV */}
+                <Field label={isMF ? 'Avg NAV (₹)' : 'Avg Buy Price (₹)'}
+                  hint={form.qty && form.avgPrice ? `Invested: ${currSymbol}${Math.round(parseFloat(form.qty)*parseFloat(form.avgPrice)).toLocaleString('en-IN')}` : ''}>
+                  <input className="input" type="number" min="0" step="any"
+                    value={form.avgPrice} onChange={e => f('avgPrice', e.target.value)}
+                    placeholder="e.g. 1450.50"
+                    style={{ width:'100%', boxSizing:'border-box' }} />
+                </Field>
+
+                {/* Invested Value — auto-filled or manual */}
+                <Field label="Invested Value (₹)" hint="Auto-calculated from Qty × Avg Price">
+                  <div style={{ position:'relative' }}>
+                    <span style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)',
+                      color:'#8892b0', fontSize:13, pointerEvents:'none' }}>₹</span>
+                    <input className="input" type="number" min="0" step="any"
+                      value={form.investedValue} onChange={e => f('investedValue', e.target.value)}
+                      placeholder="0"
+                      style={{ paddingLeft:22, width:'100%', boxSizing:'border-box',
+                        background: form.qty && form.avgPrice ? 'rgba(22,163,74,0.04)' : undefined }} />
+                  </div>
+                </Field>
+
+                {/* Present / Current Value */}
+                <Field label="Present Value (₹)" hint={plPct !== null ? `P&L: ${plPct >= 0 ? '+' : ''}${plPct.toFixed(2)}% (${plPct >= 0 ? '+' : ''}${currSymbol}${Math.round(Math.abs(plAbs)).toLocaleString('en-IN')})` : 'Current market value'}>
+                  <div style={{ position:'relative' }}>
+                    <span style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)',
+                      color:'#8892b0', fontSize:13, pointerEvents:'none' }}>₹</span>
+                    <input className="input" type="number" min="0" step="any"
+                      value={form.value} onChange={e => f('value', e.target.value)}
+                      placeholder="0"
+                      style={{ paddingLeft:22, width:'100%', boxSizing:'border-box',
+                        borderColor: plPct !== null ? (plPct >= 0 ? 'rgba(22,163,74,0.3)' : 'rgba(220,38,38,0.3)') : undefined }} />
+                  </div>
+                </Field>
+              </div>
+
+              {/* Live P&L preview */}
+              {plPct !== null && (
+                <div style={{ marginTop:10, padding:'8px 12px', borderRadius:8,
+                  background: plPct >= 0 ? 'rgba(22,163,74,0.07)' : 'rgba(220,38,38,0.07)',
+                  border: `1px solid ${plPct >= 0 ? 'rgba(22,163,74,0.2)' : 'rgba(220,38,38,0.2)'}`,
+                  display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                  <span style={{ fontSize:12, color:'#6b7494' }}>Unrealised P&L</span>
+                  <div style={{ display:'flex', gap:14 }}>
+                    <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:13, fontWeight:700,
+                      color: plPct >= 0 ? '#16a34a' : '#dc2626' }}>
+                      {plPct >= 0 ? '+' : ''}{plPct.toFixed(2)}%
+                    </span>
+                    <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:13, fontWeight:600,
+                      color: plPct >= 0 ? '#16a34a' : '#dc2626' }}>
+                      {plPct >= 0 ? '+' : '-'}{currSymbol}{Math.round(Math.abs(plAbs)).toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Source / Broker */}
+            <Field label="Source / Broker">
+              <select className="input" value={form.institution}
+                onChange={e => f('institution', e.target.value)}
+                style={{ width:'100%', boxSizing:'border-box' }}>
+                <option value="">Select broker…</option>
+                {BROKERS.map(b => <option key={b} value={b}>{b}</option>)}
+              </select>
+            </Field>
+
+            {/* Sector / Category label */}
+            <Field label={isMF ? 'Fund Category (optional)' : 'Sector (optional)'}
+              hint={isMF ? 'e.g. Large Cap, Mid Cap, ELSS, Hybrid' : 'e.g. Banking, Software & IT, Pharmaceuticals'}>
+              <input className="input" value={form.note} onChange={e => f('note', e.target.value)}
+                placeholder={isMF ? 'e.g. Mid Cap' : 'e.g. Banking'}
+                onKeyDown={e => e.key === 'Enter' && handleSave()} />
+            </Field>
+          </>
+        )}
+
+        {/* ── Standard fields for non-equity ─────────────────────── */}
+        {!isCF && !isLiab && !isEquityCat && (
+          <>
+            <Field label={`Current Value (${currSymbol})`}>
+              <input className="input" type="number" min="0" value={form.value}
+                onChange={e => f('value', e.target.value)} placeholder="0" />
+            </Field>
+            <Field label="Institution / Provider">
+              <input className="input" value={form.institution}
+                onChange={e => f('institution', e.target.value)}
+                placeholder="e.g. SBI, HDFC, Post Office…" />
+            </Field>
+            <Field label="Note (optional)">
+              <input className="input" value={form.note} onChange={e => f('note', e.target.value)}
+                placeholder="Any relevant notes…"
+                onKeyDown={e => e.key === 'Enter' && handleSave()} />
+            </Field>
+          </>
+        )}
+
+        {/* Cash flow fields */}
+        {isCF && (
           <Field label={`Monthly Amount (${currSymbol})`}>
             <input className="input" type="number" min="0" value={form.monthly}
               onChange={e => f('monthly', e.target.value)} placeholder="0" />
           </Field>
-        ) : (
-          <Field label={`${isLiab ? 'Outstanding Balance' : 'Current Value'} (${currSymbol})`}>
-            <input className="input" type="number" min="0" value={form.value}
-              onChange={e => f('value', e.target.value)} placeholder="0" />
-          </Field>
         )}
 
-        {!isCF && (
-          <Field label="Institution / Provider">
-            <input className="input" value={form.institution}
-              onChange={e => f('institution', e.target.value)}
-              placeholder="e.g. SBI, HDFC, Zerodha…" />
-          </Field>
-        )}
-
+        {/* Liability fields */}
         {isLiab && (
-          <Field label="Interest Rate (% p.a.)">
-            <input className="input" type="number" min="0" max="100" step="0.1"
-              value={form.rate} onChange={e => f('rate', e.target.value)}
-              placeholder="e.g. 8.5" />
-          </Field>
+          <>
+            <Field label={`Outstanding Balance (${currSymbol})`}>
+              <input className="input" type="number" min="0" value={form.value}
+                onChange={e => f('value', e.target.value)} placeholder="0" />
+            </Field>
+            <Field label="Institution / Provider">
+              <input className="input" value={form.institution}
+                onChange={e => f('institution', e.target.value)}
+                placeholder="e.g. SBI, HDFC…" />
+            </Field>
+            <Field label="Interest Rate (% p.a.)">
+              <input className="input" type="number" min="0" max="100" step="0.1"
+                value={form.rate} onChange={e => f('rate', e.target.value)}
+                placeholder="e.g. 8.5" />
+            </Field>
+            <Field label="Note (optional)">
+              <input className="input" value={form.note} onChange={e => f('note', e.target.value)}
+                placeholder="Any relevant notes…"
+                onKeyDown={e => e.key === 'Enter' && handleSave()} />
+            </Field>
+          </>
         )}
 
-        <Field label="Note (optional)">
-          <input className="input" value={form.note}
-            onChange={e => f('note', e.target.value)}
-            placeholder="Any relevant notes…"
-            onKeyDown={e => e.key === 'Enter' && handleSave()} />
-        </Field>
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
+        <div style={{ display:'flex', justifyContent:'flex-end', gap:10, marginTop:8 }}>
           <button className="btn btn-outline" onClick={onClose}>Cancel</button>
-          <button className="btn btn-gold" onClick={handleSave} disabled={saving || !form.name.trim()}>
-            {saving
-              ? <span style={{ animation: 'spin 0.8s linear infinite', display: 'inline-block' }}>↻</span>
-              : null}
+          <button className="btn btn-gold" onClick={handleSave}
+            disabled={saving || !form.name.trim()}>
+            {saving && <span style={{ animation:'spin 0.8s linear infinite', display:'inline-block' }}>↻</span>}
             {isEdit ? 'Save Changes' : 'Add Entry'}
           </button>
         </div>
+
       </div>
     </Modal>
   )

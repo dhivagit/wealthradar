@@ -2181,6 +2181,66 @@ export function Settings({ onToast }) {
     onToast(`Updated category for ${toFix.length} asset${toFix.length > 1 ? 's' : ''}`, 'success')
   }
 
+  // Fix missing sectors — runs sector detection on all assets that have no sector/note set
+  const fixMissingSectors = () => {
+    if (!data?.assets?.length) { onToast('No assets to fix', 'info'); return }
+    const detectSec = (name) => {
+      const n = (name || '').toLowerCase()
+      const rules = [
+        [['bank','banking','indusind','federal bank','yes bank','bandhan','au small','dcb bank','karur','city union','tmb','south indian','hdb financial','rbl bank','csb bank','hdfc bank','icici bank','axis bank','kotak mah','sbi bank'], 'Banking'],
+        [['insurance','life ins','general ins','bajaj allianz','icici pru','hdfc life','sbi life','star health','niva bupa','go digit'], 'Insurance'],
+        [['power finance','pfc','rec limited','lic housing','manappuram','muthoot','sphoorty','bajaj fin','cholaman','shriram','mahindra fin','pnb housing','can fin','aptus','home first','aditya birla cap','iifl','abcapital'], 'Financial Services'],
+        [['finance','financial'], 'Financial Services'],
+        [['tata consultancy','tcs','infosys','wipro','hcl tech','tech mahindra','ltimindtree','mphasis','persistent','coforge','hexaware','zensar','mastek','kpit','happiest','birlasoft','saksoft','tanla','tata elxsi','cyient','sasken','sonata','intellect design','nucleus software','rategain'], 'Software & IT'],
+        [['mahindra','maruti','tata motors','ashok leyland','hero moto','bajaj auto','tvs motor','eicher','bosch','mrf','apollo tyre','ceat','motherson','endurance','sona bl','uno minda','rane','samvardhana'], 'Automobiles'],
+        [['healthcare','ttk health','apollo hosp','fortis','max health','narayana','aster','global health','rainbow','kims','yatharth','metropolis','dr lal','thyrocare','vijaya diag'], 'Healthcare'],
+        [['pharma','cipla','sun pharma','drreddy','dr. reddy','biocon','divis','lupin','zydus','cadila','abbott','pfizer','natco','alkem','torrent pharma','ipca','laurus','granules','glenmark','mankind','ajanta','eris','suven'], 'Pharmaceuticals'],
+        [['oil','petroleum','ongc','bpcl','hpcl','ioc','indian oil','gail','castrol','gujarat gas','indraprastha','mahanagar gas','petronet','aegis logistics'], 'Oil & Gas'],
+        [['coal india','ntpc','adani power','tata power','torrent power','cesc','jsw energy','power grid','sjvn','nhpc','ireda','waaree','premier energies'], 'Energy & Power'],
+        [['steel','tata steel','jsw steel','sail','jspl','jindal','hindalco','vedanta','nalco','moil','nmdc','hindustan zinc'], 'Metals & Mining'],
+        [['hindustan unilever','hul','itc','dabur','godrej consumer','marico','nestle','britannia','colgate','emami','jyothy','varun bev','radico','united spirits','tilaknagar','globus spirits'], 'FMCG'],
+        [['larsen','l&t','siemens','abb','bhel','cummins','thermax','bharat forge','grindwell','timken','schaeffler','skf','elgi','kirloskar','honeywell','voltas','blue star','kec international','kalpataru','ncc'], 'Capital Goods'],
+        [['prakash pipes','supreme industries','astral','finolex','prince pipes','apollo pipes'], 'Industrials'],
+        [['pipes','fittings','valves'], 'Industrials'],
+        [['airtel','jio','vodafone','bharti','tata comm','sterlite tech','hfcl','route mobile'], 'Telecom'],
+        [['dlf','godrej prop','oberoi','prestige','brigade','sobha','macrotech','lodha','kolte patil','phoenix','puravankara'], 'Real Estate'],
+        [['ultratech','shree cement','acc','ambuja','dalmia','jk cement','ramco','birla corp','heidelberg'], 'Cement'],
+        [['pidilite','asian paint','berger','kansai','nerolac','deepak nitrite','aarti ind','navin fluorine','srf','clean science','galaxy surf','fine organics','vinati organics'], 'Chemicals'],
+        [['avenue supermarts','dmart','trent','v-mart','metro brands','bata','relaxo','titan','kalyan','vedant','manyavar'], 'Retail & Consumer'],
+        [['adani port','concor','blue dart','gati','allcargo','delhivery','mahindra logistics'], 'Logistics'],
+        [['nse','bse','cdsl','nsdl','cams','computer age','kfin tech','crisil','care ratings','icra','angel one','motilal','iifl sec','5paisa','geojit'], 'Capital Markets'],
+        [['textile','fabric','yarn','raymond','arvind','vardhman','welspun','trident'], 'Textiles'],
+        [['fertiliser','fertilizer','agri','coromandel','chambal','deepak fert','pi industries','dhanuka','rallis'], 'Agriculture'],
+        [['media','entertainment','zee','sony','network18','sun tv','pvr','inox','saregama'], 'Media & Entertainment'],
+        [['defence','defense','aerospace','hal','bharat electronics','bharat dynamics','mazagon','cochin shipyard','garden reach'], 'Defence'],
+      ]
+      for (const [keywords, sector] of rules) {
+        if (keywords.some(k => n.includes(k))) return sector
+      }
+      return ''
+    }
+
+    const EQUITY_CATS = new Set(['Stocks & Equities','Mutual Funds','Gold & Precious Metals','Cryptocurrency'])
+    let changed = 0
+    const fixed = data.assets.map(a => {
+      // Only process equity assets that are missing sector
+      if (!EQUITY_CATS.has(a.category)) return a
+      const existing = (a.note || a._sector || '').trim()
+      if (existing) return a   // already has sector — skip
+      const detected = detectSec(a.name)
+      if (!detected) return a  // couldn't detect — skip
+      changed++
+      return { ...a, note: detected, _sector: detected }
+    })
+
+    if (changed === 0) {
+      onToast('All equity holdings already have sector names', 'success')
+      return
+    }
+    batchUpdateCollection('assets', fixed)
+    onToast(`Sector detected and filled for ${changed} holding${changed > 1 ? 's' : ''}`, 'success')
+  }
+
   const printReport = () => {
     const c = CURRENCIES.find(x => x.code === settings.currency) || CURRENCIES[0]
     const fmt = (n) => `${c.symbol}${Math.round(n).toLocaleString()}`
@@ -2331,6 +2391,25 @@ export function Settings({ onToast }) {
               className="btn btn-outline btn-sm"
               style={{ flexShrink: 0, marginLeft: 16 }}
               onClick={fixNameCasing}>
+              Fix Now
+            </button>
+          </div>
+
+          {/* Auto-fill Missing Sectors — NEW */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#f8f9fc', borderRadius: 10, border: '1px solid rgba(91,143,249,0.3)' }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 500, color: '#1a1d2e', marginBottom: 3 }}>
+                Auto-fill Missing Sectors
+                <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 600, color: '#5b8ff9', background: 'rgba(91,143,249,0.1)', padding: '2px 7px', borderRadius: 20 }}>NEW</span>
+              </div>
+              <div style={{ fontSize: 12, color: '#8892b0' }}>
+                Scans all equity holdings with no sector set and auto-detects the sector from the stock name (e.g. INFY → Software &amp; IT, DRREDDY → Pharmaceuticals).
+              </div>
+            </div>
+            <button
+              className="btn btn-outline btn-sm"
+              style={{ flexShrink: 0, marginLeft: 16, borderColor: '#5b8ff9', color: '#5b8ff9' }}
+              onClick={fixMissingSectors}>
               Fix Now
             </button>
           </div>
