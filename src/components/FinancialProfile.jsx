@@ -205,7 +205,7 @@ Monthly expenses: Rs${profile.monthlyExpenses||0} | EMIs: Rs${profile.emi||0} | 
 Term insurance: ${profile.termInsurance==='yes'?'Yes Rs'+profile.termCover:'NOT COVERED'}
 Health insurance: ${profile.healthInsurance==='yes'?'Yes Rs'+profile.healthCover:profile.healthInsurance==='employer'?'Employer only':'NOT COVERED'}
 Emergency fund: Rs${profile.emergencyFund||0} (${profile.emergencyMonths} months)
-Goals: ${profile.goals.length===0?'None':(profile.goals.map(g=>g.label+' Rs'+( g.targetAmount||0)+' by '+g.targetYear).join(' | '))}
+Goals: ${profile.goals.length===0?'None':(profile.goals.map(g=>g.label+' Rs'+(g.targetAmount||0)+' by '+g.targetYear+(parseInt(g.currentSaved)>0?' savedRs'+g.currentSaved:'')).join(' | '))}
 Existing: MF Rs${profile.existingMF||0} | Equity Rs${profile.existingEquity||0} | PPF Rs${profile.existingPPF||0} | EPF Rs${profile.existingEPF||0} | FD Rs${profile.existingFD||0}
 
 Return ONLY this JSON structure with no changes to key names:
@@ -284,10 +284,14 @@ Rules: all amounts are integers, all strings under 80 chars, goalPlans has one e
       }
       const parsed = JSON.parse(repairJSON(clean))
       setAiPlan(parsed)
-      // Persist the plan so it survives tab switches
+      // Persist the plan + profile goals currentSaved (indexed by position as reliable fallback)
       if (session?.userId) {
         const existing = ProfileDB.get(session.userId) || {}
-        ProfileDB.save(session.userId, { ...existing, _aiPlan: parsed })
+        const savedAmounts = (profile.goals||[]).map((g,i) => ({
+          index: i, label: g.label, currentSaved: parseInt(g.currentSaved)||0,
+          targetAmount: parseInt(g.targetAmount)||0, targetYear: g.targetYear
+        }))
+        ProfileDB.save(session.userId, { ...existing, _aiPlan: parsed, _profileSavedAmounts: savedAmounts })
       }
       // Notify parent that profile setup is complete
       if (onComplete) setTimeout(onComplete, 1200)
@@ -451,27 +455,47 @@ Rules: all amounts are integers, all strings under 80 chars, goalPlans has one e
               No goals added yet. Click below to add your first goal.
             </div>
           )}
-          {profile.goals.map(g => {
+          {profile.goals.map((g, gi) => {
             const years = parseInt(g.targetYear) - new Date().getFullYear()
             const sip   = calcSIP(parseInt(g.targetAmount||0) - parseInt(g.currentSaved||0), years)
+            const updateGoal = (fields) => setProfile(p => ({ ...p, goals: p.goals.map((x,xi) => xi===gi ? {...x,...fields} : x) }))
             return (
-              <div key={g.id} style={{ display:'flex', alignItems:'center', gap:14, padding:'14px 16px',
-                background:'#f8f9fc', borderRadius:10, border:'1px solid #eef0f8' }}>
-                <span style={{ fontSize:24 }}>{g.icon}</span>
-                <div style={{ flex:1 }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4 }}>
-                    <span style={{ fontSize:14, fontWeight:600, color:'#1a1d2e' }}>{g.label}</span>
-                    <Pill label={g.priority} color={g.priority==='high'?'#dc2626':g.priority==='medium'?'#d97706':'#16a34a'}
-                      bg={g.priority==='high'?'rgba(220,38,38,0.08)':g.priority==='medium'?'rgba(217,119,6,0.08)':'rgba(22,163,74,0.08)'} />
+              <div key={g.id} style={{ background:'#f8f9fc', borderRadius:10, border:'1px solid #eef0f8', overflow:'hidden' }}>
+                {/* Goal header row */}
+                <div style={{ display:'flex', alignItems:'center', gap:14, padding:'14px 16px' }}>
+                  <span style={{ fontSize:24 }}>{g.icon}</span>
+                  <div style={{ flex:1 }}>
+                    {/* Editable goal name */}
+                    <input
+                      value={g.label}
+                      onChange={e => updateGoal({ label: e.target.value })}
+                      style={{ fontSize:14, fontWeight:600, color:'#1a1d2e', border:'none', background:'transparent',
+                        outline:'none', width:'100%', fontFamily:"'Outfit',sans-serif", padding:0, marginBottom:4 }}
+                      placeholder="Goal name…" />
+                    <div style={{ display:'flex', gap:14, flexWrap:'wrap', fontSize:12, color:'#6b7494' }}>
+                      <span>Target: <strong style={{color:'#1a1d2e'}}>{fmt(parseInt(g.targetAmount))}</strong></span>
+                      <span>By: <strong style={{color:'#1a1d2e'}}>{g.targetYear}</strong></span>
+                      {years > 0 && sip > 0 && <span>Est. SIP: <strong style={{color:'#c8920a'}}>₹{sip.toLocaleString('en-IN')}/mo</strong></span>}
+                      {parseInt(g.currentSaved) > 0 && <span>Saved: <strong>{fmt(parseInt(g.currentSaved))}</strong></span>}
+                    </div>
                   </div>
-                  <div style={{ display:'flex', gap:14, flexWrap:'wrap', fontSize:12, color:'#6b7494' }}>
-                    <span>Target: <strong style={{color:'#1a1d2e'}}>{fmt(parseInt(g.targetAmount))}</strong></span>
-                    <span>By: <strong style={{color:'#1a1d2e'}}>{g.targetYear}</strong></span>
-                    {years > 0 && sip > 0 && <span>Est. SIP: <strong style={{color:'#c8920a'}}>₹{sip.toLocaleString('en-IN')}/mo</strong></span>}
-                    {parseInt(g.currentSaved) > 0 && <span>Saved: <strong>{fmt(parseInt(g.currentSaved))}</strong></span>}
-                  </div>
+                  <button onClick={() => removeGoal(g.id)} style={{ fontSize:16, color:'#f06a6a', background:'none', border:'none', cursor:'pointer', flexShrink:0 }}>×</button>
                 </div>
-                <button onClick={() => removeGoal(g.id)} style={{ fontSize:16, color:'#f06a6a', background:'none', border:'none', cursor:'pointer' }}>×</button>
+                {/* Inline edit row for amounts */}
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, padding:'0 16px 14px', borderTop:'1px solid #eef0f8' }}>
+                  {[
+                    { label:'Target (₹)', key:'targetAmount', type:'number' },
+                    { label:'Target Year', key:'targetYear',   type:'number' },
+                    { label:'Already Saved (₹)', key:'currentSaved', type:'number' },
+                  ].map(f => (
+                    <div key={f.key}>
+                      <div style={{ fontSize:10, color:'#8892b0', marginBottom:3, fontWeight:500 }}>{f.label}</div>
+                      <input className="input" type={f.type} value={g[f.key]||''}
+                        onChange={e => updateGoal({ [f.key]: e.target.value })}
+                        style={{ width:'100%', boxSizing:'border-box', fontSize:12, padding:'6px 10px' }} />
+                    </div>
+                  ))}
+                </div>
               </div>
             )
           })}
@@ -952,6 +976,7 @@ export function FinancialPlanTab() {
 
   const [plan,         setPlan]         = useState(null)
   const [profile,      setProfile]      = useState(null)
+  const [savedAmounts, setSavedAmounts] = useState([])  // profile goals currentSaved at plan time
   const [activeSection,setActiveSection]= useState('goals')
   const [editingGoal,  setEditingGoal]  = useState(null)   // goalIndex being edited
   const [goalEdits,    setGoalEdits]    = useState({})     // {index: {currentSaved, targetAmount, targetYear, monthlySIP}}
@@ -967,10 +992,11 @@ export function FinancialPlanTab() {
     if (!session?.userId) return
     const saved = ProfileDB.get(session.userId)
     if (saved) {
-      const { _aiPlan, _goalMap, _goalEdits, _protEdits, ...profileData } = saved
+      const { _aiPlan, _goalMap, _goalEdits, _protEdits, _profileSavedAmounts, ...profileData } = saved
       setProfile(profileData)
       if (_aiPlan)    { setPlan(_aiPlan); setGoalEdits(_goalEdits||{}); setProtEdits(_protEdits||{}) }
       if (_goalMap)   setGoalMap(_goalMap)
+      if (_profileSavedAmounts) setSavedAmounts(_profileSavedAmounts)
     }
   }, [session?.userId])
 
@@ -1001,27 +1027,41 @@ export function FinancialPlanTab() {
 
   // ── Derived calculations ─────────────────────────────────────────────────────
   const assets = data?.assets || []
+  // ── Profile goals are the SOURCE OF TRUTH for goal name, target, year, currentSaved
+  // AI plan only provides: instrument recommendations, advice, monthlySIP suggestion
+  // We merge by index (position) — goal 0 in profile = goal 0 in AI plan
+  const profileGoals = profile?.goals || []
 
-  // Merge AI goalPlans with local edits
-  // Map profile goals by label for currentSaved lookup
-  const profileGoalMap = {}
-  ;(profile?.goals||[]).forEach(g => { profileGoalMap[g.label?.toLowerCase()] = g })
+  // Build AI lookup map by index for instrument/advice enrichment
+  const aiGoalByIndex = {}
+  ;(plan.goalPlans || []).forEach((g, i) => { aiGoalByIndex[i] = g })
 
-  const goalPlans = (plan.goalPlans || []).map((g, i) => {
-    const e = goalEdits[i] || {}
-    const targetAmount  = parseInt(e.targetAmount  ?? g.targetAmount  ?? 0)
-    const targetYear    = e.targetYear    ?? g.targetYear    ?? ''
-    // currentSaved: priority = user edit → profile goals → AI plan (usually 0)
-    const profileGoal   = profileGoalMap[(g.goalName||'').toLowerCase()] || {}
-    const currentSaved  = parseInt(e.currentSaved  ?? profileGoal.currentSaved ?? g.currentSaved ?? 0)
-    const yearsLeft     = Math.max(0, (parseInt(targetYear) || 0) - new Date().getFullYear())
-    const shortfall     = Math.max(0, targetAmount - currentSaved)
-    const autoSIP       = yearsLeft > 0
+  const goalPlans = profileGoals.map((pg, i) => {
+    const e   = goalEdits[i] || {}
+    const ai  = aiGoalByIndex[i] || {}
+
+    // Goal name: user edit > profile label (NEVER use AI-renamed title)
+    const goalName     = e.goalName     ?? pg.label         ?? ai.goalName ?? `Goal ${i+1}`
+    // Amounts: user edit > profile wizard entry > AI suggestion
+    const targetAmount = parseInt(e.targetAmount ?? pg.targetAmount ?? ai.targetAmount ?? 0)
+    const targetYear   = e.targetYear   ?? pg.targetYear    ?? ai.targetYear  ?? ''
+    const currentSaved = parseInt(e.currentSaved ?? savedAmounts[i]?.currentSaved ?? pg.currentSaved ?? ai.currentSaved ?? 0)
+    const yearsLeft    = Math.max(0, (parseInt(targetYear)||0) - new Date().getFullYear())
+    const shortfall    = Math.max(0, targetAmount - currentSaved)
+    const autoSIP      = yearsLeft > 0
       ? Math.round(shortfall / (yearsLeft * 12) * (1 + 0.12/12) ** (yearsLeft*12) / ((1+0.12/12) ** (yearsLeft*12) - 1) * (0.12/12) / (0.12/12))
       : shortfall
-    const monthlySIP    = e.monthlySIP !== undefined ? parseInt(e.monthlySIP)||0 : autoSIP
-    const pct           = targetAmount > 0 ? Math.min(100, Math.round(currentSaved / targetAmount * 100)) : 0
-    return { ...g, targetAmount, targetYear, currentSaved, yearsLeft, shortfall, monthlySIP, pct, index: i }
+    const monthlySIP   = e.monthlySIP !== undefined ? parseInt(e.monthlySIP)||0 : (ai.monthlySIP||autoSIP)
+    const pct          = targetAmount > 0 ? Math.min(100, Math.round(currentSaved / targetAmount * 100)) : 0
+    // Enrich with AI recommendations (instrument, advice) — these don't override user data
+    return {
+      ...ai,
+      goalName, targetAmount, targetYear, currentSaved,
+      yearsLeft, shortfall, monthlySIP, pct, index: i,
+      icon: pg.icon || ai.icon || '🎯',
+      instrument: ai.instrument || '',
+      advice:     ai.advice     || '',
+    }
   })
 
   const totalTarget  = goalPlans.reduce((s,g) => s + g.targetAmount, 0)
@@ -1079,7 +1119,20 @@ export function FinancialPlanTab() {
   const saveGoalEdit = (i, fields) => {
     const updated = { ...goalEdits, [i]: { ...(goalEdits[i]||{}), ...fields } }
     setGoalEdits(updated)
-    persist({ _goalEdits: updated })
+    // Also sync goal name + key fields back to profile.goals so Profile wizard stays in sync
+    const updatedProfileGoals = (profile?.goals||[]).map((pg, idx) => {
+      if (idx !== i) return pg
+      return {
+        ...pg,
+        ...(fields.goalName     !== undefined ? { label:       fields.goalName }     : {}),
+        ...(fields.targetAmount !== undefined ? { targetAmount:fields.targetAmount }  : {}),
+        ...(fields.targetYear   !== undefined ? { targetYear:  fields.targetYear }    : {}),
+        ...(fields.currentSaved !== undefined ? { currentSaved:fields.currentSaved }  : {}),
+      }
+    })
+    const updatedProfile = { ...(profile||{}), goals: updatedProfileGoals }
+    setProfile(updatedProfile)
+    persist({ _goalEdits: updated, ...updatedProfile })
     setEditingGoal(null)
   }
 
@@ -1244,6 +1297,15 @@ export function FinancialPlanTab() {
 
                   return (
                     <div style={{ padding:'16px 20px', background:'rgba(200,146,10,0.02)' }}>
+                      {/* Goal name edit — full width */}
+                      <div style={{ marginBottom:12 }}>
+                        <label style={{ fontSize:11, fontWeight:600, color:'#6b7494', display:'block', marginBottom:4 }}>Goal Name</label>
+                        <input className="input" type="text"
+                          value={e.goalName !== undefined ? e.goalName : g.goalName}
+                          onChange={ev => setGoalEdits(p => ({...p, [i]: {...(p[i]||{}), goalName: ev.target.value}}))}
+                          placeholder="e.g. Child Education - Kavin"
+                          style={{ width:'100%', boxSizing:'border-box', fontWeight:600 }} />
+                      </div>
                       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:14 }}>
                         <div>
                           <label style={{ fontSize:11, fontWeight:600, color:'#6b7494', display:'block', marginBottom:4 }}>Current Saved (₹)</label>
@@ -1334,14 +1396,18 @@ export function FinancialPlanTab() {
         const healthScore   = !healthHas ? 0 : healthCurrent >= healthNeeded ? 100 : healthCurrent >= healthNeeded*0.5 ? 65 : 30
         const healthPriority= healthScore === 100 ? 'Achieved' : healthScore === 0 ? 'Critical' : healthScore < 50 ? 'High' : 'Medium'
 
-        // Emergency Fund
-        const emergCurrent  = parseInt(pe.emergencyFundCurrent ?? profile?.emergencyFund ?? 0)
-        const emergMonths   = parseInt(pe.emergencyMonths !== undefined ? pe.emergencyMonths : profile?.emergencyMonths||0)
+        // Emergency Fund — sync with the Emergency Fund goal entry if it exists
+        const emergGoal       = profileGoals.find(g => /emergency/i.test(g.label||g.type||'')) || {}
+        const emergCurrent    = parseInt(pe.emergencyFundCurrent ?? profile?.emergencyFund ?? emergGoal.currentSaved ?? 0)
+        const emergMonths     = parseInt(pe.emergencyMonths !== undefined ? pe.emergencyMonths : profile?.emergencyMonths||0)
         const monthlyExpenses = parseInt(profile?.monthlyExpenses||0) + parseInt(profile?.emi||0)
-        const emergNeeded   = monthlyExpenses > 0 ? monthlyExpenses * 6 : income * 0.4 * 6
-        const emergPct     = emergNeeded > 0 ? Math.min(100, Math.round(emergCurrent/emergNeeded*100)) : 0
-        const emergScore   = emergMonths >= 6 ? 100 : emergMonths >= 3 ? 60 : emergMonths >= 1 ? 30 : 0
-        const emergPriority= emergScore === 100 ? 'Achieved' : emergScore === 0 ? 'Critical' : emergScore < 50 ? 'High' : 'Medium'
+        // Target: use emergency goal's targetAmount if set, otherwise calculate from expenses × 6
+        const emergNeeded     = parseInt(emergGoal.targetAmount||0) > 0
+          ? parseInt(emergGoal.targetAmount)
+          : (monthlyExpenses > 0 ? monthlyExpenses * 6 : income * 0.4 * 6)
+        const emergPct        = emergNeeded > 0 ? Math.min(100, Math.round(emergCurrent/emergNeeded*100)) : 0
+        const emergScore      = emergMonths >= 6 ? 100 : emergMonths >= 3 ? 60 : emergMonths >= 1 ? 30 : 0
+        const emergPriority   = emergScore === 100 ? 'Achieved' : emergScore === 0 ? 'Critical' : emergScore < 50 ? 'High' : 'Medium'
 
         // Overall score
         const overallScore = Math.round((termScore + healthScore + emergScore) / 3)
@@ -1490,7 +1556,7 @@ export function FinancialPlanTab() {
               </div>
               <div style={{ display:'flex', gap:16, flexWrap:'wrap', fontSize:12, marginBottom:10 }}>
                 <div><span style={{ color:'#8892b0' }}>Current: </span><strong style={{ color:'#1a1d2e' }}>₹{emergCurrent.toLocaleString('en-IN')} ({emergMonths} months)</strong></div>
-                <div><span style={{ color:'#8892b0' }}>Target: </span><strong style={{ color:'#c8920a' }}>₹{emergNeeded.toLocaleString('en-IN')} (6 months)</strong></div>
+                <div><span style={{ color:'#8892b0' }}>Target: </span><strong style={{ color:'#c8920a' }}>₹{emergNeeded.toLocaleString('en-IN')}</strong><span style={{ fontSize:11, color:'#8892b0', marginLeft:6 }}>{emergGoal.targetAmount > 0 ? '← from your Emergency Fund goal' : '(6 months expenses)'}</span></div>
                 <div><span style={{ color:'#8892b0' }}>Gap: </span><strong style={{ color: emergCurrent>=emergNeeded?'#16a34a':'#dc2626' }}>₹{Math.max(0,emergNeeded-emergCurrent).toLocaleString('en-IN')}</strong></div>
               </div>
               <div style={{ height:6, background:'#eef0f8', borderRadius:3, overflow:'hidden', marginBottom:10 }}>
@@ -1596,27 +1662,30 @@ export function FinancialPlanTab() {
         </div>
       )}
 
-      {/* ── ALLOCATION SECTION ────────────────────────────────────────────────── */}
+      {/* ── ALLOCATION SECTION — links to dedicated tab ─────────────────────── */}
       {activeSection === 'allocation' && (
-        <div className="card" style={{ padding:24 }}>
-          <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:18, color:'#1a1d2e', fontWeight:700, marginBottom:16 }}>
-            Recommended Asset Allocation
+        <div className="card" style={{ padding:32, textAlign:'center' }}>
+          <div style={{ fontSize:40, marginBottom:12 }}>🥧</div>
+          <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:20, color:'#1a1d2e', fontWeight:700, marginBottom:8 }}>
+            Full Allocation Analysis
           </div>
-          <div style={{ display:'grid', gap:12 }}>
-            {plan.assetAllocation?.map((a, i) => (
-              <div key={i} style={{ padding:'14px 16px', background:'#f8f9fc', borderRadius:10, border:'1px solid #eef0f8' }}>
-                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
-                  <span style={{ fontSize:14, fontWeight:600, color:'#1a1d2e' }}>{a.class}</span>
-                  <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:18, fontWeight:700, color:'#c8920a' }}>{a.pct}%</span>
-                </div>
-                <div style={{ height:6, background:'#eef0f8', borderRadius:3, marginBottom:8, overflow:'hidden' }}>
-                  <div style={{ height:'100%', width:`${a.pct}%`, background:'#c8920a', borderRadius:3 }} />
-                </div>
-                {a.instruments && <div style={{ fontSize:12, fontWeight:500, color:'#5b8ff9', marginBottom:4 }}>📌 {a.instruments}</div>}
-                {a.rationale   && <div style={{ fontSize:12, color:'#6b7494', lineHeight:1.6 }}>{a.rationale}</div>}
-              </div>
-            ))}
+          <div style={{ fontSize:13, color:'#8892b0', marginBottom:20, lineHeight:1.7, maxWidth:440, margin:'0 auto 20px' }}>
+            View your current vs target allocation, rebalancing recommendations, and per-asset breakdown in the dedicated Allocation tab.
           </div>
+          {plan.assetAllocation?.length > 0 && (
+            <div style={{ display:'flex', gap:10, justifyContent:'center', flexWrap:'wrap', marginBottom:20 }}>
+              {plan.assetAllocation.map((a,i) => (
+                <div key={i} style={{ background:'#f8f9fc', border:'1px solid #eef0f8', borderRadius:10, padding:'10px 16px', minWidth:120 }}>
+                  <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:18, fontWeight:700, color:'#c8920a' }}>{a.pct}%</div>
+                  <div style={{ fontSize:12, color:'#1a1d2e', fontWeight:500 }}>{a.class}</div>
+                  {a.instruments && <div style={{ fontSize:10, color:'#8892b0', marginTop:2 }}>{a.instruments}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+          <button className="btn btn-gold" onClick={() => window.__wrSetTab?.('allocation')}>
+            🥧 Open Allocation Tab →
+          </button>
         </div>
       )}
 

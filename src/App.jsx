@@ -6,7 +6,7 @@ import { Notification }                from './components/UI'
 import AuthScreen                      from './components/AuthScreen'
 import LandingPage                     from './components/LandingPage'
 import ResetPasswordScreen             from './components/ResetPasswordScreen'
-import { Dashboard, Assets, Liabilities, CashFlow, Analytics, NetWorth, Settings } from './components/Tabs'
+import { Dashboard, Assets, Liabilities, CashFlow, Analytics, NetWorth, Settings, AssetAllocation } from './components/Tabs'
 import { FinancialProfile, FinancialPlanTab, ProfileDB } from './components/FinancialProfile'
 import { TaxHarvest } from './components/TaxHarvest'
 import { TABS }                        from './utils/constants'
@@ -55,6 +55,7 @@ function Shell() {
     networth:    <NetWorth />,
     profile:     <FinancialProfile onComplete={() => { setActiveTab('finplan'); setShowOnboarding(false) }} />,
     finplan:     <FinancialPlanTab />,
+    allocation:  <AssetAllocation />,
     taxharvest:  <TaxHarvest />,
     settings:    <Settings onToast={toast} />,
   }

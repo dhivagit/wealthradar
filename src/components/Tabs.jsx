@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar,
   PieChart, Pie, Cell, RadialBarChart, RadialBar,
@@ -2536,6 +2536,491 @@ export function Settings({ onToast }) {
           Reset to Sample Data
         </button>
       </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ASSET ALLOCATION TAB
+// Shows: current allocation by asset class, age-based target, rebalance recs
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Map each WealthRadar category → macro asset class
+const CLASS_MAP = {
+  'Stocks & Equities':       'Equity',
+  'Mutual Funds':            'Equity',   // equity MFs; debt MFs need note-based override below
+  'NPS':                     'Equity',   // market-linked
+  'Gold & Precious Metals':  'Gold & Silver',
+  'Cryptocurrency':          'Equity',   // treated as high-risk equity
+  'Fixed Deposits':          'Debt',
+  'PPF / EPF':               'Debt',
+  'SSA (Sukanya Samriddhi)': 'Debt',
+  'Bonds & Debentures':      'Debt',
+  'Cash & Equivalents':      'Cash',
+  'Real Estate':             'Real Estate',
+  'Vehicles':                null,        // excluded
+  'Business Assets':         null,
+  'Others':                  null,
+}
+// MF sub-classification by note/sector keyword
+const mfClass = (note='') => {
+  const n = note.toLowerCase()
+  if (/debt|bond|gilt|liquid|overnight|money market|banking psu|floater|credit risk|short dur|long dur/.test(n)) return 'Debt'
+  if (/gold|silver/.test(n)) return 'Gold & Silver'
+  return 'Equity' // default: equity MF
+}
+
+// Age-based target allocation (standard Indian financial planning guidelines)
+const getTargetAllocation = (age) => {
+  const a = parseInt(age)||35
+  // Rule: 100-age in equity (with floors/ceilings), rest in debt + others
+  if (a < 30) return { Equity:70, Debt:20, 'Gold & Silver':5, Cash:3, 'Real Estate':2 }
+  if (a < 35) return { Equity:65, Debt:25, 'Gold & Silver':5, Cash:3, 'Real Estate':2 }
+  if (a < 40) return { Equity:60, Debt:28, 'Gold & Silver':7, Cash:3, 'Real Estate':2 }
+  if (a < 45) return { Equity:55, Debt:30, 'Gold & Silver':8, Cash:4, 'Real Estate':3 }
+  if (a < 50) return { Equity:50, Debt:32, 'Gold & Silver':8, Cash:5, 'Real Estate':5 }
+  if (a < 55) return { Equity:45, Debt:35, 'Gold & Silver':8, Cash:7, 'Real Estate':5 }
+  if (a < 60) return { Equity:40, Debt:38, 'Gold & Silver':7, Cash:8, 'Real Estate':7 }
+  return        { Equity:30, Debt:42, 'Gold & Silver':8, Cash:10,'Real Estate':10 }
+}
+
+const CLASS_COLORS = {
+  Equity:        '#5b8ff9',
+  Debt:          '#34d399',
+  'Gold & Silver':'#c8953a',
+  Cash:          '#56d8c8',
+  'Real Estate': '#f09b46',
+}
+const CLASS_ICONS = {
+  Equity: '📈', Debt: '🏦', 'Gold & Silver': '🥇', Cash: '💵', 'Real Estate': '🏠',
+}
+
+export function AssetAllocation() {
+  const { data, settings } = useFinance()
+  const { session } = useAuth()
+  const ALL_CLASSES = ['Equity','Debt','Gold & Silver','Cash','Real Estate']
+
+  // ── State ──────────────────────────────────────────────────────────────────
+  const [showRebalance, setShowRebalance] = useState(false)
+  const [age,           setAge]           = useState(35)
+  const [editTarget,    setEditTarget]    = useState(false)   // edit mode toggle
+  const [customTarget,  setCustomTarget]  = useState(null)    // null = use age-based
+  const [draftTarget,   setDraftTarget]   = useState({})      // live edits before save
+
+  // ── Load profile age + saved custom target ─────────────────────────────────
+  useEffect(() => {
+    if (!session?.userId) return
+    try {
+      const p = JSON.parse(localStorage.getItem(`wr_profile_${session.userId}`) || '{}')
+      if (p.age) setAge(parseInt(p.age)||35)
+      if (p._customAllocation) setCustomTarget(p._customAllocation)
+    } catch {}
+  }, [session?.userId])
+
+  // ── Persist custom target ──────────────────────────────────────────────────
+  const saveCustomTarget = (alloc) => {
+    if (!session?.userId) return
+    try {
+      const p = JSON.parse(localStorage.getItem(`wr_profile_${session.userId}`) || '{}')
+      localStorage.setItem(`wr_profile_${session.userId}`, JSON.stringify({ ...p, _customAllocation: alloc }))
+    } catch {}
+  }
+
+  const resetToAgeBased = () => {
+    setCustomTarget(null)
+    setEditTarget(false)
+    if (!session?.userId) return
+    try {
+      const p = JSON.parse(localStorage.getItem(`wr_profile_${session.userId}`) || '{}')
+      delete p._customAllocation
+      localStorage.setItem(`wr_profile_${session.userId}`, JSON.stringify(p))
+    } catch {}
+  }
+
+  // ── Asset classification ───────────────────────────────────────────────────
+  const assets = data?.assets || []
+  const classTotals = {}
+  const classAssets = {}
+  ALL_CLASSES.forEach(cl => { classTotals[cl] = 0; classAssets[cl] = [] })
+
+  assets.forEach(a => {
+    if (!a.value) return
+    let cl = CLASS_MAP[a.category]
+    if (cl === undefined) return
+    if (a.category === 'Mutual Funds') cl = mfClass(a.note || a._sector || '')
+    if (!cl) return
+    classTotals[cl] = (classTotals[cl]||0) + (a.value||0)
+    classAssets[cl].push(a)
+  })
+
+  const investedTotal = ALL_CLASSES.reduce((s,cl) => s + (classTotals[cl]||0), 0)
+
+  const current = {}
+  ALL_CLASSES.forEach(cl => {
+    current[cl] = investedTotal > 0 ? Math.round((classTotals[cl]||0) / investedTotal * 100) : 0
+  })
+
+  // Active target = custom (if set) or age-based
+  const ageBased  = getTargetAllocation(age)
+  const target    = customTarget || ageBased
+  const isCustom  = Boolean(customTarget)
+
+  // Draft sum for validation
+  const draftSum  = ALL_CLASSES.reduce((s,cl) => s + (parseInt(draftTarget[cl]??target[cl])||0), 0)
+  const draftValid= draftSum === 100
+
+  const rebalance = {}
+  let rebalTotal = 0
+  ALL_CLASSES.forEach(cl => {
+    const diff = (target[cl]||0) - (current[cl]||0)
+    rebalance[cl] = { diff, amount: Math.round(investedTotal * diff / 100) }
+    if (diff > 0) rebalTotal += Math.abs(rebalance[cl].amount)
+  })
+
+  const fmt = v => {
+    const abs = Math.abs(v)
+    if (abs >= 1e7) return `₹${(abs/1e7).toFixed(2)}Cr`
+    if (abs >= 1e5) return `₹${(abs/1e5).toFixed(1)}L`
+    if (abs >= 1e3) return `₹${(abs/1e3).toFixed(0)}K`
+    return `₹${abs.toLocaleString('en-IN')}`
+  }
+
+  if (assets.length === 0) return (
+    <div style={{ textAlign:'center', padding:'60px 20px', color:'#8892b0' }}>
+      <div style={{ fontSize:48, marginBottom:12 }}>🥧</div>
+      <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:20, color:'#1a1d2e', marginBottom:8 }}>No assets yet</div>
+      <div style={{ fontSize:13 }}>Add assets to see your allocation breakdown and rebalancing recommendations.</div>
+    </div>
+  )
+
+  return (
+    <div style={{ display:'grid', gap:20, maxWidth:1100, margin:'0 auto' }}>
+
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      <div style={{ background:'linear-gradient(135deg,#1a1d2e,#252945)', borderRadius:16, padding:'24px 28px', color:'#fff', position:'relative', overflow:'hidden' }}>
+        <div style={{ position:'absolute', right:-30, top:-30, width:180, height:180, background:'rgba(200,146,10,0.07)', borderRadius:'50%' }}/>
+        <div style={{ position:'relative' }}>
+          <div style={{ fontSize:11, letterSpacing:'0.1em', color:'#c8920a', fontWeight:600, marginBottom:4, textTransform:'uppercase' }}>Asset Allocation</div>
+          <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:22, fontWeight:700, marginBottom:14 }}>
+            Portfolio Allocation & Rebalancing
+          </div>
+          <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+            {[
+              { l:'Total Portfolio', v: fmt(investedTotal) },
+              { l:'Age', v: `${age} years` },
+              { l:'Equity', v:`${current.Equity||0}%`, c: Math.abs((current.Equity||0)-(target.Equity||0)) > 10 ? '#f09b46' : '#3ecf8e' },
+              { l:'Debt',   v:`${current.Debt||0}%`,   c: Math.abs((current.Debt||0)-(target.Debt||0)) > 10 ? '#f09b46' : '#3ecf8e' },
+              { l:'Target Mode', v: isCustom ? '✏️ Custom' : '🤖 Age-based', c: isCustom ? '#c8920a' : '#3ecf8e' },
+            ].map(x => (
+              <div key={x.l} style={{ background:'rgba(255,255,255,0.07)', borderRadius:10, padding:'9px 14px' }}>
+                <div style={{ fontSize:10, color:'rgba(255,255,255,0.45)', marginBottom:2 }}>{x.l}</div>
+                <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:14, fontWeight:700, color: x.c||'rgba(255,255,255,0.9)' }}>{x.v}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Two column: Current vs Target ─────────────────────────────────── */}
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
+
+        {/* Current Allocation */}
+        <div className="card" style={{ padding:24 }}>
+          <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:17, fontWeight:700, color:'#1a1d2e', marginBottom:16 }}>
+            📊 Current Allocation
+          </div>
+          <div style={{ display:'grid', gap:12 }}>
+            {ALL_CLASSES.map(cl => {
+              const pct = current[cl]||0
+              const val = classTotals[cl]||0
+              const col = CLASS_COLORS[cl]
+              if (val === 0) return null
+              return (
+                <div key={cl}>
+                  <div style={{ display:'flex', justifyContent:'space-between', marginBottom:5 }}>
+                    <span style={{ fontSize:13, fontWeight:500, color:'#1a1d2e' }}>{CLASS_ICONS[cl]} {cl}</span>
+                    <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+                      <span style={{ fontSize:11, color:'#8892b0' }}>{fmt(val)}</span>
+                      <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:14, fontWeight:700, color:col }}>{pct}%</span>
+                    </div>
+                  </div>
+                  <div style={{ height:8, background:'#eef0f8', borderRadius:4, overflow:'hidden' }}>
+                    <div style={{ height:'100%', width:`${pct}%`, background:col, borderRadius:4, transition:'width 0.6s' }}/>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Target Allocation — editable */}
+        <div className="card" style={{ padding:24, border: editTarget ? '1.5px solid #c8920a' : undefined }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:4 }}>
+            <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:17, fontWeight:700, color:'#1a1d2e' }}>
+              🎯 Target Allocation
+            </div>
+            {!editTarget ? (
+              <div style={{ display:'flex', gap:6 }}>
+                {isCustom && (
+                  <button className="btn btn-outline btn-sm" style={{ fontSize:10, color:'#8892b0' }}
+                    onClick={resetToAgeBased} title="Reset to age-based recommendation">
+                    ↺ Age-based
+                  </button>
+                )}
+                <button className="btn btn-outline btn-sm" style={{ fontSize:11, borderColor:'#c8920a', color:'#c8920a' }}
+                  onClick={() => { setDraftTarget({}); setEditTarget(true) }}>
+                  ✏️ Edit
+                </button>
+              </div>
+            ) : (
+              <div style={{ display:'flex', gap:6 }}>
+                <button className="btn btn-outline btn-sm" onClick={() => setEditTarget(false)}>Cancel</button>
+                <button className="btn btn-gold btn-sm"
+                  disabled={!draftValid}
+                  title={!draftValid ? `Total must be 100% (currently ${draftSum}%)` : ''}
+                  onClick={() => {
+                    const saved = {}
+                    ALL_CLASSES.forEach(cl => { saved[cl] = parseInt(draftTarget[cl]??target[cl])||0 })
+                    setCustomTarget(saved)
+                    saveCustomTarget(saved)
+                    setEditTarget(false)
+                  }}>
+                  Save
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Mode badge */}
+          <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:16 }}>
+            {isCustom ? (
+              <span style={{ fontSize:11, fontWeight:600, color:'#c8920a', background:'rgba(200,146,10,0.08)', border:'1px solid rgba(200,146,10,0.2)', padding:'2px 10px', borderRadius:12 }}>
+                ✏️ Custom target
+              </span>
+            ) : (
+              <span style={{ fontSize:11, color:'#8892b0', background:'#f0f2f8', border:'1px solid #e0e4f0', padding:'2px 10px', borderRadius:12 }}>
+                🤖 Age-based for {age} years — <em>recommended</em>
+              </span>
+            )}
+            {editTarget && (
+              <span style={{ fontSize:11, fontWeight:600, color: draftValid ? '#16a34a' : '#dc2626' }}>
+                Total: {draftSum}% {draftValid ? '✓' : `(need 100%)`}
+              </span>
+            )}
+          </div>
+
+          {/* Age-based preset buttons (shown when editing) */}
+          {editTarget && (
+            <div style={{ marginBottom:14, padding:'10px 12px', background:'rgba(91,143,249,0.04)', border:'1px solid rgba(91,143,249,0.15)', borderRadius:10 }}>
+              <div style={{ fontSize:11, color:'#5b8ff9', fontWeight:600, marginBottom:8 }}>💡 Load age-based preset:</div>
+              <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                {[25,30,35,40,45,50,55,60].map(a => (
+                  <button key={a} className="btn btn-outline btn-sm" style={{ fontSize:10, padding:'3px 8px' }}
+                    onClick={() => {
+                      const preset = getTargetAllocation(a)
+                      setDraftTarget(preset)
+                    }}>
+                    Age {a}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div style={{ display:'grid', gap:12 }}>
+            {ALL_CLASSES.map(cl => {
+              const tgt  = editTarget ? (parseInt(draftTarget[cl]??target[cl])||0) : (target[cl]||0)
+              const cur_ = current[cl]||0
+              const diff = tgt - cur_
+              const col  = CLASS_COLORS[cl]
+              return (
+                <div key={cl}>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:5 }}>
+                    <span style={{ fontSize:13, fontWeight:500, color:'#1a1d2e' }}>{CLASS_ICONS[cl]} {cl}</span>
+                    <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                      {!editTarget && diff !== 0 && (
+                        <span style={{ fontSize:11, fontWeight:600,
+                          color: diff > 0 ? '#16a34a' : '#dc2626',
+                          background: diff > 0 ? 'rgba(22,163,74,0.08)' : 'rgba(220,38,38,0.08)',
+                          padding:'1px 7px', borderRadius:10 }}>
+                          {diff > 0 ? '▲' : '▼'}{Math.abs(diff)}%
+                        </span>
+                      )}
+                      {!editTarget && diff === 0 && <span style={{ fontSize:11, color:'#16a34a' }}>✓</span>}
+
+                      {editTarget ? (
+                        <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                          <button style={{ width:22, height:22, borderRadius:'50%', border:'1px solid #e0e4f0', background:'#f8f9fc', cursor:'pointer', fontSize:14, lineHeight:1, color:'#6b7494' }}
+                            onClick={() => setDraftTarget(p => ({ ...p, [cl]: Math.max(0, (parseInt(p[cl]??target[cl])||0) - 1) }))}>−</button>
+                          <input type="number" min="0" max="100"
+                            value={draftTarget[cl] !== undefined ? draftTarget[cl] : target[cl]}
+                            onChange={e => setDraftTarget(p => ({ ...p, [cl]: e.target.value }))}
+                            style={{ width:46, textAlign:'center', fontFamily:"'JetBrains Mono',monospace", fontSize:14,
+                              fontWeight:700, color:col, border:'1px solid #e0e4f0', borderRadius:6, padding:'2px 4px' }} />
+                          <span style={{ fontSize:12, color:'#8892b0' }}>%</span>
+                          <button style={{ width:22, height:22, borderRadius:'50%', border:'1px solid #e0e4f0', background:'#f8f9fc', cursor:'pointer', fontSize:14, lineHeight:1, color:'#6b7494' }}
+                            onClick={() => setDraftTarget(p => ({ ...p, [cl]: Math.min(100, (parseInt(p[cl]??target[cl])||0) + 1) }))}>+</button>
+                        </div>
+                      ) : (
+                        <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:14, fontWeight:700, color:col }}>{tgt}%</span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ height:8, background:'#eef0f8', borderRadius:4, overflow:'hidden', position:'relative' }}>
+                    <div style={{ position:'absolute', height:'100%', width:`${cur_}%`, background:col, opacity:0.35, borderRadius:4 }}/>
+                    <div style={{ position:'absolute', height:'100%', width:`${tgt}%`, border:`2px solid ${col}`, borderRadius:4, boxSizing:'border-box' }}/>
+                  </div>
+                  <div style={{ display:'flex', gap:12, marginTop:3, fontSize:10, color:'#b0b8d0' }}>
+                    <span>Current: {cur_}%</span>
+                    <span>Target: {tgt}%</span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Rebalancing Recommendations ────────────────────────────────────── */}
+      <div className="card" style={{ padding:24 }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+          <div>
+            <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:17, fontWeight:700, color:'#1a1d2e', marginBottom:2 }}>
+              ⚖️ Rebalancing Recommendations
+            </div>
+            <div style={{ fontSize:12, color:'#8892b0' }}>
+              Based on {isCustom ? 'your custom' : `age-${age}`} target allocation
+            </div>
+          </div>
+          <button className="btn btn-outline btn-sm" onClick={() => setShowRebalance(p=>!p)}>
+            {showRebalance ? 'Hide Holdings' : 'Show Holdings'}
+          </button>
+        </div>
+
+        <div style={{ display:'grid', gap:10 }}>
+          {ALL_CLASSES.map(cl => {
+            const { diff, amount } = rebalance[cl]
+            const tgt  = target[cl]||0
+            const cur_ = current[cl]||0
+            const col  = CLASS_COLORS[cl]
+            const isOnTarget = Math.abs(diff) <= 2
+            const action = diff > 5 ? 'Increase' : diff < -5 ? 'Reduce' : 'Balanced'
+
+            return (
+              <div key={cl} style={{ padding:'14px 16px', borderRadius:10, border:'1px solid #eef0f8',
+                background: isOnTarget ? 'rgba(22,163,74,0.03)' : diff > 5 ? 'rgba(91,143,249,0.03)' : 'rgba(220,38,38,0.03)',
+                borderLeft:`3px solid ${isOnTarget ? '#16a34a' : col}` }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                    <span style={{ fontSize:18 }}>{CLASS_ICONS[cl]}</span>
+                    <div>
+                      <div style={{ fontSize:14, fontWeight:600, color:'#1a1d2e' }}>{cl}</div>
+                      <div style={{ fontSize:11, color:'#8892b0', marginTop:2 }}>
+                        Current {cur_}% → Target {tgt}%
+                        {!isOnTarget && <span style={{ marginLeft:8, color: diff>0?'#5b8ff9':'#f06a6a' }}>({diff>0?'+':''}{diff}%)</span>}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ textAlign:'right' }}>
+                    {isOnTarget ? (
+                      <span style={{ fontSize:12, fontWeight:600, color:'#16a34a', background:'rgba(22,163,74,0.08)', padding:'4px 12px', borderRadius:20 }}>✓ On Target</span>
+                    ) : (
+                      <div>
+                        <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:15, fontWeight:700, color: diff>0?'#16a34a':'#dc2626' }}>
+                          {diff>0?'+':''}{fmt(amount)}
+                        </div>
+                        <div style={{ fontSize:11, color:'#8892b0', marginTop:2 }}>
+                          {action === 'Increase' ? '↑ Invest more' : '↓ Reduce / hold'}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {showRebalance && classAssets[cl]?.length > 0 && (() => {
+                  // For Equity class: split into direct stocks vs everything else (MFs, NPS, Crypto)
+                  const directStocks = cl === 'Equity' ? classAssets[cl].filter(a => a.category === 'Stocks & Equities') : []
+                  const otherEquity  = cl === 'Equity' ? classAssets[cl].filter(a => a.category !== 'Stocks & Equities') : classAssets[cl]
+                  const stockTotal   = directStocks.reduce((s,a) => s+(a.value||0), 0)
+
+                  return (
+                    <div style={{ marginTop:12, paddingTop:10, borderTop:'1px solid #eef0f8' }}>
+                      <div style={{ fontSize:10, fontWeight:600, color:'#8892b0', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:8 }}>Holdings</div>
+                      <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+
+                        {/* Direct stocks — show as single summary row */}
+                        {directStocks.length > 0 && (
+                          <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, padding:'6px 10px', background:'rgba(91,143,249,0.05)', borderRadius:7, border:'1px solid rgba(91,143,249,0.12)' }}>
+                            <span style={{ color:'#5b8ff9', fontWeight:600 }}>
+                              📈 Direct Stocks ({directStocks.length} holdings)
+                            </span>
+                            <span style={{ fontFamily:"'JetBrains Mono',monospace", color:'#1a1d2e', fontWeight:600 }}>
+                              {fmt(stockTotal)} <span style={{ color:'#b0b8d0' }}>({investedTotal>0?Math.round(stockTotal/investedTotal*100):0}%)</span>
+                            </span>
+                          </div>
+                        )}
+
+                        {/* All other assets (MFs, NPS, Crypto, Gold, Debt, etc.) — show full list */}
+                        {otherEquity.map((a,i) => (
+                          <div key={a.id||i} style={{ display:'flex', justifyContent:'space-between', fontSize:12 }}>
+                            <span style={{ color:'#6b7494', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:'60%' }}>{a.name}</span>
+                            <span style={{ fontFamily:"'JetBrains Mono',monospace", color:'#1a1d2e', fontWeight:500 }}>
+                              {fmt(a.value)} <span style={{ color:'#b0b8d0' }}>({investedTotal>0?Math.round(a.value/investedTotal*100):0}%)</span>
+                            </span>
+                          </div>
+                        ))}
+
+                      </div>
+                    </div>
+                  )
+                })()}
+              </div>
+            )
+          })}
+        </div>
+
+        {rebalTotal > 0 && (
+          <div style={{ marginTop:16, padding:'14px 18px', background:'rgba(200,146,10,0.06)', border:'1px solid rgba(200,146,10,0.2)', borderRadius:12 }}>
+            <div style={{ fontSize:13, fontWeight:600, color:'#1a1d2e', marginBottom:6 }}>📋 Action Plan</div>
+            <div style={{ fontSize:12, color:'#6b7494', lineHeight:1.9 }}>
+              {ALL_CLASSES.filter(cl => rebalance[cl].diff > 5).map(cl => (
+                <div key={cl}>• <strong>Increase {cl}</strong> by ~{fmt(rebalance[cl].amount)} — invest in {
+                  cl==='Equity'?'index funds, direct stocks' :
+                  cl==='Debt'?'PPF, FDs, debt mutual funds' :
+                  cl==='Gold & Silver'?'gold ETF, SGB, silver ETF' :
+                  cl==='Cash'?'liquid fund, savings account' :
+                  'real estate or REITs'
+                }</div>
+              ))}
+              {ALL_CLASSES.filter(cl => rebalance[cl].diff < -5).map(cl => (
+                <div key={cl}>• <strong>Reduce {cl}</strong> by ~{fmt(Math.abs(rebalance[cl].amount))} — pause new investments, redirect to underweight classes</div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Classification Legend ───────────────────────────────────────────── */}
+      <div className="card" style={{ padding:20 }}>
+        <div style={{ fontSize:13, fontWeight:600, color:'#1a1d2e', marginBottom:12 }}>📖 How assets are classified</div>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))', gap:8, fontSize:12, color:'#6b7494' }}>
+          {[
+            { cl:'Equity',        items:'Direct Stocks, Equity MFs, NPS, Crypto' },
+            { cl:'Debt',          items:'FD, PPF, EPF, SSA, Bonds, Debt MFs' },
+            { cl:'Gold & Silver', items:'Gold ETF, SGB, Silver ETF, Physical' },
+            { cl:'Cash',          items:'Savings account, Liquid fund, Cash' },
+            { cl:'Real Estate',   items:'Property, Land, REITs' },
+          ].map(x => (
+            <div key={x.cl} style={{ padding:'8px 12px', background:'#f8f9fc', borderRadius:8, borderLeft:`3px solid ${CLASS_COLORS[x.cl]}` }}>
+              <div style={{ fontWeight:600, color:'#1a1d2e', marginBottom:2 }}>{CLASS_ICONS[x.cl]} {x.cl}</div>
+              <div style={{ fontSize:11 }}>{x.items}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop:10, fontSize:11, color:'#b0b8d0' }}>
+          * Mutual Funds classified as Equity or Debt based on fund category in the sector field.
+        </div>
+      </div>
+
     </div>
   )
 }

@@ -69,7 +69,8 @@ export const TABS = [
   { id: 'cashflow',    label: 'Cash Flow',   icon: '⇄' },
   { id: 'analytics',   label: 'Analytics',   icon: '◈' },
   { id: 'networth',    label: 'Net Worth',   icon: '◉' },
-  { id: 'finplan',     label: 'My Plan',     icon: '📋' },
+  { id: 'finplan',     label: 'My Goals',     icon: '📋' },
+  { id: 'allocation',  label: 'Allocation',  icon: '🥧' },
   { id: 'taxharvest',  label: 'Tax Harvest', icon: '⚡' },
   { id: 'settings',    label: 'Settings',    icon: '⚙' },
 ]

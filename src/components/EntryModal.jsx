@@ -105,7 +105,7 @@ const PLACEHOLDER_NAME = {
   expenses:    'e.g. Rent / EMI',
 }
 
-const BROKERS = ['Zerodha','Groww','ICICI Direct','INDMoney','MF Central','Kuvera','HDFC Securities','Kotak Securities','Angel One','5Paisa','Upstox','NSDL/CDSL','EPFO','Post Office','SBI','HDFC Bank','Other']
+const BROKERS = ['Zerodha','Groww','ICICI Direct','INDMoney','Aionion Capital','MF Central','Kuvera','HDFC Securities','Kotak Securities','Angel One','5Paisa','Upstox','NSDL/CDSL','EPFO','Post Office','SBI','HDFC Bank','Other']
 
 export default function EntryModal({ collection, item, onClose, onSaved }) {
   const { addItem, updateItem, settings } = useFinance()
