@@ -25,17 +25,51 @@ const EMPTY_PROFILE = {
   existingFD: '', retirementAge: '60',
 }
 
+// Inflation rates by goal type (annual %)
+const INFLATION_RATES = {
+  emergency:  0,     // liquid fund
+  home:       0.08,  // property prices ~8% p.a.
+  car:        0.06,
+  education:  0.10,  // education fee inflation ~10% p.a.
+  wedding:    0.06,
+  travel:     0.06,
+  retirement: 0.06,
+  business:   0.07,
+  gadget:     0.04,
+  custom:     0.06,
+}
+
+// Expected return rates by goal type (equity for long-term, debt for short-term)
+const RETURN_RATES = {
+  emergency:  0.07,  // liquid/FD — 7%
+  home:       0.10,  // balanced equity+debt — 10%
+  car:        0.08,  // short-medium, debt-heavy — 8%
+  education:  0.12,  // long horizon, equity — 12%
+  wedding:    0.09,  // medium, balanced — 9%
+  travel:     0.08,  // short, balanced — 8%
+  retirement: 0.12,  // long, equity — 12%
+  business:   0.11,
+  gadget:     0.07,  // short, debt — 7%
+  custom:     0.10,
+}
+
+// Calculate inflation-adjusted target: today's value × (1 + inflation)^years
+function calcInflatedTarget(todayAmount, years, inflationRate) {
+  if (!years || years <= 0 || !inflationRate) return parseInt(todayAmount)||0
+  return Math.round((parseInt(todayAmount)||0) * Math.pow(1 + inflationRate, years))
+}
+
 const GOAL_TYPES = [
-  { id:'emergency',    label:'Emergency Fund',      icon:'🛡️',  horizon:'short'  },
-  { id:'home',         label:'Buy a Home',          icon:'🏠',  horizon:'long'   },
-  { id:'car',          label:'Buy a Car',           icon:'🚗',  horizon:'medium' },
-  { id:'education',    label:'Child Education',     icon:'🎓',  horizon:'long'   },
-  { id:'wedding',      label:'Wedding',             icon:'💍',  horizon:'medium' },
-  { id:'travel',       label:'Travel / Vacation',   icon:'✈️',  horizon:'short'  },
-  { id:'retirement',   label:'Retirement',          icon:'🌅',  horizon:'long'   },
-  { id:'business',     label:'Start a Business',    icon:'💼',  horizon:'medium' },
-  { id:'gadget',       label:'Gadget / Electronics',icon:'💻',  horizon:'short'  },
-  { id:'custom',       label:'Custom Goal',         icon:'⭐',  horizon:'medium' },
+  { id:'emergency',    label:'Emergency Fund',       icon:'🛡️',  horizon:'short',  inflationRate: INFLATION_RATES.emergency,  returnRate: RETURN_RATES.emergency  },
+  { id:'home',         label:'Buy a Home',           icon:'🏠',  horizon:'long',   inflationRate: INFLATION_RATES.home,       returnRate: RETURN_RATES.home       },
+  { id:'car',          label:'Buy a Car',            icon:'🚗',  horizon:'medium', inflationRate: INFLATION_RATES.car,        returnRate: RETURN_RATES.car        },
+  { id:'education',    label:'Child Education',      icon:'🎓',  horizon:'long',   inflationRate: INFLATION_RATES.education,  returnRate: RETURN_RATES.education  },
+  { id:'wedding',      label:'Wedding',              icon:'💍',  horizon:'medium', inflationRate: INFLATION_RATES.wedding,    returnRate: RETURN_RATES.wedding    },
+  { id:'travel',       label:'Travel / Vacation',    icon:'✈️',  horizon:'short',  inflationRate: INFLATION_RATES.travel,     returnRate: RETURN_RATES.travel     },
+  { id:'retirement',   label:'Retirement',           icon:'🌅',  horizon:'long',   inflationRate: INFLATION_RATES.retirement, returnRate: RETURN_RATES.retirement },
+  { id:'business',     label:'Start a Business',     icon:'💼',  horizon:'medium', inflationRate: INFLATION_RATES.business,   returnRate: RETURN_RATES.business   },
+  { id:'gadget',       label:'Gadget / Electronics', icon:'💻',  horizon:'short',  inflationRate: INFLATION_RATES.gadget,     returnRate: RETURN_RATES.gadget     },
+  { id:'custom',       label:'Custom Goal',          icon:'⭐',  horizon:'medium', inflationRate: INFLATION_RATES.custom,     returnRate: RETURN_RATES.custom     },
 ]
 
 const STEPS = [
@@ -174,7 +208,21 @@ export function FinancialProfile({ onComplete } = {}) {
 
   const addGoal = () => {
     const type   = GOAL_TYPES.find(g => g.id === newGoal.type) || GOAL_TYPES[9]
-    const goal   = { id: Date.now(), ...newGoal, icon: type.icon, label: newGoal.label || type.label, horizon: type.horizon }
+    const years  = parseInt(newGoal.targetYear) - new Date().getFullYear()
+    const inflationRate = type.inflationRate || 0
+    // Store both today's value and the inflation-adjusted future target
+    const rawTarget      = parseInt(newGoal.targetAmount)||0
+    const inflatedTarget = calcInflatedTarget(rawTarget, years, inflationRate)
+    const returnRate = type.returnRate || RETURN_RATES[type.id] || 0.10
+    const goal = {
+      id: Date.now(), ...newGoal,
+      icon: type.icon, label: newGoal.label || type.label, horizon: type.horizon,
+      inflationRate,
+      returnRate,
+      todayValue:        rawTarget,
+      targetAmount:      inflationRate > 0 ? inflatedTarget : rawTarget,
+      inflationAdjusted: inflationRate > 0,
+    }
     setProfile(p => ({ ...p, goals: [...p.goals, goal] }))
     setGoalModal(false)
     setNewGoal({ type:'home', label:'', targetAmount:'', targetYear:'', currentSaved:'0', priority:'high' })
@@ -457,7 +505,9 @@ Rules: all amounts are integers, all strings under 80 chars, goalPlans has one e
           )}
           {profile.goals.map((g, gi) => {
             const years = parseInt(g.targetYear) - new Date().getFullYear()
-            const sip   = calcSIP(parseInt(g.targetAmount||0) - parseInt(g.currentSaved||0), years)
+            const shortfallCard = Math.max(0, (parseInt(g.targetAmount)||0) - (parseInt(g.currentSaved)||0))
+            const rCard = 0.12/12, nCard = Math.max(1, years) * 12
+            const sip = years > 0 && shortfallCard > 0 ? Math.round(shortfallCard * rCard / (Math.pow(1+rCard, nCard) - 1)) : 0
             const updateGoal = (fields) => setProfile(p => ({ ...p, goals: p.goals.map((x,xi) => xi===gi ? {...x,...fields} : x) }))
             return (
               <div key={g.id} style={{ background:'#f8f9fc', borderRadius:10, border:'1px solid #eef0f8', overflow:'hidden' }}>
@@ -472,9 +522,16 @@ Rules: all amounts are integers, all strings under 80 chars, goalPlans has one e
                       style={{ fontSize:14, fontWeight:600, color:'#1a1d2e', border:'none', background:'transparent',
                         outline:'none', width:'100%', fontFamily:"'Outfit',sans-serif", padding:0, marginBottom:4 }}
                       placeholder="Goal name…" />
-                    <div style={{ display:'flex', gap:14, flexWrap:'wrap', fontSize:12, color:'#6b7494' }}>
-                      <span>Target: <strong style={{color:'#1a1d2e'}}>{fmt(parseInt(g.targetAmount))}</strong></span>
+                    <div style={{ display:'flex', gap:10, flexWrap:'wrap', fontSize:12, color:'#6b7494', alignItems:'center' }}>
+                      <span>Target: <strong style={{color:'#1a1d2e'}}>{fmt(parseInt(g.targetAmount))}</strong>
+                        {g.inflationAdjusted && <span style={{ fontSize:10, color:'#c8920a', marginLeft:4 }}>(inflation-adj.)</span>}
+                      </span>
                       <span>By: <strong style={{color:'#1a1d2e'}}>{g.targetYear}</strong></span>
+                      {g.inflationRate > 0 && (
+                        <span style={{ fontSize:10, fontWeight:600, color:'#c8920a', background:'rgba(200,146,10,0.08)', padding:'1px 7px', borderRadius:10 }}>
+                          📈 {(g.inflationRate*100).toFixed(0)}% inflation
+                        </span>
+                      )}
                       {years > 0 && sip > 0 && <span>Est. SIP: <strong style={{color:'#c8920a'}}>₹{sip.toLocaleString('en-IN')}/mo</strong></span>}
                       {parseInt(g.currentSaved) > 0 && <span>Saved: <strong>{fmt(parseInt(g.currentSaved))}</strong></span>}
                     </div>
@@ -545,10 +602,28 @@ Rules: all amounts are integers, all strings under 80 chars, goalPlans has one e
               </div>
               {newGoal.targetAmount && newGoal.targetYear && (() => {
                 const yrs = parseInt(newGoal.targetYear) - new Date().getFullYear()
-                const sip = calcSIP(parseInt(newGoal.targetAmount||0) - parseInt(newGoal.currentSaved||0), yrs)
+                const goalType = GOAL_TYPES.find(g => g.id === newGoal.type) || GOAL_TYPES[9]
+                const inflRate = goalType.inflationRate || 0
+                const rawTarget = parseInt(newGoal.targetAmount)||0
+                const inflTarget = calcInflatedTarget(rawTarget, yrs, inflRate)
+                const shortfall = Math.max(0, inflTarget - (parseInt(newGoal.currentSaved)||0))
+                const r = 0.12/12, n = yrs * 12
+                const sip = yrs > 0 && shortfall > 0 ? Math.round(shortfall * r / (Math.pow(1+r, n) - 1)) : shortfall
                 return yrs > 0 ? (
-                  <div style={{ background:'rgba(200,146,10,0.07)', border:'1px solid rgba(200,146,10,0.2)', borderRadius:8, padding:'10px 14px', fontSize:12, color:'#92700a', marginTop:4 }}>
-                    To reach this goal: <strong>₹{sip.toLocaleString('en-IN')}/month SIP</strong> for {yrs} years (assuming 12% p.a. equity returns)
+                  <div style={{ background:'rgba(200,146,10,0.07)', border:'1px solid rgba(200,146,10,0.2)', borderRadius:8, padding:'12px 14px', fontSize:12, color:'#92700a', marginTop:4, display:'grid', gap:6 }}>
+                    {inflRate > 0 && (
+                      <div style={{ display:'flex', justifyContent:'space-between', paddingBottom:6, borderBottom:'1px solid rgba(200,146,10,0.15)' }}>
+                        <span>Today's value: <strong>₹{rawTarget.toLocaleString('en-IN')}</strong></span>
+                        <span style={{ display:'flex', alignItems:'center', gap:6 }}>
+                          <span style={{ fontSize:10, background:'rgba(200,146,10,0.15)', padding:'2px 7px', borderRadius:10 }}>📈 {(inflRate*100).toFixed(0)}% inflation/yr</span>
+                          <span>→ Future target: <strong>₹{inflTarget.toLocaleString('en-IN')}</strong></span>
+                        </span>
+                      </div>
+                    )}
+                    <div>
+                      Monthly SIP needed: <strong>₹{sip.toLocaleString('en-IN')}/month</strong> for {yrs} yrs at 12% equity returns
+                      {inflRate === 0 && <span style={{ color:'#b0966a', marginLeft:6, fontSize:11 }}>(no inflation applied for this goal type)</span>}
+                    </div>
                   </div>
                 ) : null
               })()}
@@ -1046,18 +1121,28 @@ export function FinancialPlanTab() {
     const targetAmount = parseInt(e.targetAmount ?? pg.targetAmount ?? ai.targetAmount ?? 0)
     const targetYear   = e.targetYear   ?? pg.targetYear    ?? ai.targetYear  ?? ''
     const currentSaved = parseInt(e.currentSaved ?? savedAmounts[i]?.currentSaved ?? pg.currentSaved ?? ai.currentSaved ?? 0)
-    const yearsLeft    = Math.max(0, (parseInt(targetYear)||0) - new Date().getFullYear())
-    const shortfall    = Math.max(0, targetAmount - currentSaved)
-    const autoSIP      = yearsLeft > 0
-      ? Math.round(shortfall / (yearsLeft * 12) * (1 + 0.12/12) ** (yearsLeft*12) / ((1+0.12/12) ** (yearsLeft*12) - 1) * (0.12/12) / (0.12/12))
-      : shortfall
-    const monthlySIP   = e.monthlySIP !== undefined ? parseInt(e.monthlySIP)||0 : (ai.monthlySIP||autoSIP)
-    const pct          = targetAmount > 0 ? Math.min(100, Math.round(currentSaved / targetAmount * 100)) : 0
-    // Enrich with AI recommendations (instrument, advice) — these don't override user data
+    const yearsLeft     = Math.max(0, (parseInt(targetYear)||0) - new Date().getFullYear())
+    const shortfall     = Math.max(0, targetAmount - currentSaved)
+    // Per-goal return rate — normalize to decimal (e.returnRate stored as % string e.g."8", pg.returnRate as decimal 0.08)
+    const rawR      = e.returnRate !== undefined ? parseFloat(e.returnRate) : null
+    const returnRate = rawR !== null
+      ? (rawR > 1 ? rawR / 100 : rawR)          // "8" → 0.08, "0.08" → 0.08
+      : parseFloat(pg.returnRate ?? RETURN_RATES[pg.type||'custom'] ?? 0.10)
+    const inflationRate = parseFloat(pg.inflationRate ?? INFLATION_RATES[pg.type||'custom'] ?? 0.06)
+    const r             = returnRate / 12
+    const n             = yearsLeft * 12
+    const autoSIP       = yearsLeft > 0 && shortfall > 0
+      ? Math.round(shortfall * r / (Math.pow(1 + r, n) - 1))
+      : (shortfall > 0 ? shortfall : 0)
+    const monthlySIP    = e.monthlySIP !== undefined && e.monthlySIP !== '' ? parseInt(e.monthlySIP)||0 : autoSIP
+    const pct           = targetAmount > 0 ? Math.min(100, Math.round(currentSaved / targetAmount * 100)) : 0
     return {
       ...ai,
       goalName, targetAmount, targetYear, currentSaved,
       yearsLeft, shortfall, monthlySIP, pct, index: i,
+      returnRate, inflationRate,
+      inflationAdjusted: pg.inflationAdjusted,
+      todayValue: pg.todayValue,
       icon: pg.icon || ai.icon || '🎯',
       instrument: ai.instrument || '',
       advice:     ai.advice     || '',
@@ -1117,7 +1202,13 @@ export function FinancialPlanTab() {
 
   // ── Save goal edits ──────────────────────────────────────────────────────────
   const saveGoalEdit = (i, fields) => {
-    const updated = { ...goalEdits, [i]: { ...(goalEdits[i]||{}), ...fields } }
+    // Normalize returnRate to decimal on save (user enters as % like "8", store as 0.08)
+    const normalized = { ...fields }
+    if (normalized.returnRate !== undefined && normalized.returnRate !== '') {
+      const rv = parseFloat(normalized.returnRate)
+      normalized.returnRate = rv > 1 ? rv / 100 : rv
+    }
+    const updated = { ...goalEdits, [i]: { ...(goalEdits[i]||{}), ...normalized } }
     setGoalEdits(updated)
     // Also sync goal name + key fields back to profile.goals so Profile wizard stays in sync
     const updatedProfileGoals = (profile?.goals||[]).map((pg, idx) => {
@@ -1224,136 +1315,215 @@ export function FinancialPlanTab() {
 
       {/* ── GOALS SECTION ─────────────────────────────────────────────────────── */}
       {activeSection === 'goals' && (
-        <div style={{ display:'grid', gap:14 }}>
+        <div style={{ display:'grid', gap:16 }}>
+          {/* Section header */}
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-            <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:18, color:'#1a1d2e', fontWeight:700 }}>
-              Financial Goals Tracker
+            <div>
+              <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:20, color:'#1a1d2e', fontWeight:700 }}>Financial Goals Tracker</div>
+              <div style={{ fontSize:12, color:'#8892b0', marginTop:2 }}>Click any goal card to edit progress, saved amount, or target</div>
             </div>
-            <div style={{ fontSize:11, color:'#8892b0' }}>Click any goal to edit progress</div>
+            <div style={{ display:'flex', gap:10 }}>
+              <div style={{ textAlign:'right' }}>
+                <div style={{ fontSize:10, color:'#8892b0' }}>Total Monthly SIP</div>
+                <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:16, fontWeight:700, color:'#c8920a' }}>₹{totalSIP.toLocaleString('en-IN')}/mo</div>
+              </div>
+            </div>
           </div>
 
           {goalPlans.map((g, i) => {
             const isEditing = editingGoal === i
-            const mapped = (goalMap[g.goalName] || [])
-              .map(id => assets.find(a => a.id === id))
-              .filter(Boolean)
+            const mapped = (goalMap[g.goalName] || []).map(id => assets.find(a => a.id === id)).filter(Boolean)
             const mappedValue = mapped.reduce((s,a) => s+(a.value||0), 0)
+            const pctColor = g.pct >= 100 ? '#16a34a' : g.pct >= 60 ? '#c8920a' : g.pct >= 30 ? '#f09b46' : '#dc2626'
+
+            // All SIP calculations use the SAME returnRate so they stay consistent
+            const rr = g.returnRate || 0.10
+            const ir = g.inflationRate || 0
 
             return (
-              <div key={i} className="card" style={{ padding:0, overflow:'hidden', border: isEditing ? '1.5px solid #c8920a' : undefined }}>
-                {/* Goal header */}
-                <div style={{ padding:'16px 20px', background: isEditing ? 'rgba(200,146,10,0.04)' : '#f8f9fc',
-                  borderBottom:'1px solid #eef0f8', display:'flex', justifyContent:'space-between', alignItems:'center', cursor:'pointer' }}
+              <div key={i} className="card" style={{ padding:0, overflow:'hidden',
+                border: isEditing ? '1.5px solid #c8920a' : '1px solid #eef0f8',
+                boxShadow: isEditing ? '0 4px 20px rgba(200,146,10,0.12)' : '0 1px 4px rgba(0,0,0,0.04)' }}>
+
+                {/* ── Goal header row ── */}
+                <div style={{ padding:'16px 20px', background: isEditing ? 'rgba(200,146,10,0.04)' : '#fafbfc',
+                  display:'flex', justifyContent:'space-between', alignItems:'center', cursor:'pointer',
+                  borderBottom:'1px solid #eef0f8' }}
                   onClick={() => setEditingGoal(isEditing ? null : i)}>
                   <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                    <div style={{ fontWeight:700, fontSize:15, color:'#1a1d2e' }}>{g.goalName}</div>
-                    {mapped.length > 0 && (
-                      <span style={{ fontSize:10, fontWeight:600, color:'#059669', background:'rgba(5,150,105,0.1)', padding:'2px 8px', borderRadius:12 }}>
-                        🔗 {mapped.length} asset{mapped.length>1?'s':''}
-                      </span>
-                    )}
+                    <span style={{ fontSize:22 }}>{g.icon}</span>
+                    <div>
+                      <div style={{ fontWeight:700, fontSize:15, color:'#1a1d2e' }}>{g.goalName}</div>
+                      <div style={{ display:'flex', gap:8, marginTop:3, flexWrap:'wrap' }}>
+                        {ir > 0 && (
+                          <span style={{ fontSize:10, fontWeight:600, color:'#c8920a', background:'rgba(200,146,10,0.08)', border:'1px solid rgba(200,146,10,0.2)', padding:'1px 7px', borderRadius:10 }}>
+                            📈 {(ir*100).toFixed(0)}% inflation
+                          </span>
+                        )}
+                        <span style={{ fontSize:10, fontWeight:600, color:'#5b8ff9', background:'rgba(91,143,249,0.08)', border:'1px solid rgba(91,143,249,0.2)', padding:'1px 7px', borderRadius:10 }}>
+                          💹 {(rr*100).toFixed(0)}% returns p.a.
+                        </span>
+                        {mapped.length > 0 && (
+                          <span style={{ fontSize:10, fontWeight:600, color:'#059669', background:'rgba(5,150,105,0.08)', padding:'1px 7px', borderRadius:10 }}>
+                            🔗 {mapped.length} asset{mapped.length>1?'s':''}
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </div>
                   <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-                    <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:16, fontWeight:700, color:'#c8920a' }}>
-                      ₹{g.monthlySIP.toLocaleString('en-IN')}<span style={{ fontSize:10, fontWeight:400, color:'#8892b0' }}>/mo</span>
-                    </span>
+                    <div style={{ textAlign:'right' }}>
+                      <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:17, fontWeight:700, color:'#c8920a' }}>
+                        ₹{g.monthlySIP.toLocaleString('en-IN')}
+                        <span style={{ fontSize:10, fontWeight:400, color:'#8892b0' }}>/mo</span>
+                      </div>
+                      <div style={{ fontSize:10, color:'#8892b0', marginTop:1 }}>monthly SIP</div>
+                    </div>
                     <span style={{ color:'#c8920a', fontSize:14 }}>{isEditing ? '▲' : '▼'}</span>
                   </div>
                 </div>
 
-                {/* Progress bar always visible */}
-                <div style={{ padding:'12px 20px', borderBottom: isEditing ? '1px solid #eef0f8' : 'none' }}>
-                  <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, color:'#8892b0', marginBottom:6 }}>
-                    <span>₹{g.currentSaved.toLocaleString('en-IN')} saved {mapped.length>0 && <span style={{color:'#059669'}}>(+₹{mappedValue.toLocaleString('en-IN')} in linked assets)</span>}</span>
-                    <span style={{ fontWeight:600, color: g.pct >= 100 ? '#16a34a' : g.pct >= 50 ? '#c8920a' : '#6b7494' }}>
-                      {g.pct}% · ₹{g.shortfall.toLocaleString('en-IN')} remaining
+                {/* ── Progress section ── */}
+                <div style={{ padding:'14px 20px', borderBottom: isEditing ? '1px solid #eef0f8' : 'none' }}>
+                  {/* Progress bar */}
+                  <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, marginBottom:5 }}>
+                    <span style={{ color:'#6b7494' }}>
+                      ₹{g.currentSaved.toLocaleString('en-IN')} saved
+                      {mappedValue > 0 && <span style={{ color:'#059669', marginLeft:4 }}>(+₹{mappedValue.toLocaleString('en-IN')} linked)</span>}
                     </span>
+                    <span style={{ fontWeight:600, color: pctColor }}>{g.pct}% · ₹{g.shortfall.toLocaleString('en-IN')} to go</span>
                   </div>
-                  <div style={{ height:8, background:'#eef0f8', borderRadius:4, overflow:'hidden' }}>
+                  <div style={{ height:8, background:'#eef0f8', borderRadius:4, overflow:'hidden', marginBottom:10 }}>
                     <div style={{ height:'100%', width:`${g.pct}%`,
-                      background: g.pct >= 100 ? '#16a34a' : 'linear-gradient(90deg,#c8920a,#f0b429)',
+                      background: g.pct >= 100 ? '#16a34a' : `linear-gradient(90deg, ${pctColor}cc, ${pctColor})`,
                       borderRadius:4, transition:'width 0.5s' }} />
                   </div>
-                  <div style={{ display:'flex', gap:16, marginTop:6, fontSize:11, color:'#8892b0' }}>
-                    <span>Target: <strong style={{color:'#1a1d2e'}}>₹{g.targetAmount.toLocaleString('en-IN')}</strong></span>
-                    <span>By: <strong style={{color:'#1a1d2e'}}>{g.targetYear}</strong></span>
-                    <span>{g.yearsLeft} years left</span>
-                    {g.instrument && <span>📌 {g.instrument}</span>}
+
+                  {/* Goal meta row */}
+                  <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(120px, 1fr))', gap:10 }}>
+                    {[
+                      { l:'Target', v:`₹${g.targetAmount.toLocaleString('en-IN')}` + (g.inflationAdjusted ? ' ↑' : ''), bold: true },
+                      { l:"Today's Value", v: g.todayValue && g.todayValue !== g.targetAmount ? `₹${parseInt(g.todayValue).toLocaleString('en-IN')}` : null },
+                      { l:'Target Year', v: g.targetYear },
+                      { l:'Years Left', v: `${g.yearsLeft} yrs` },
+                      { l:'Recommended', v: g.instrument || null },
+                    ].filter(x => x.v).map(x => (
+                      <div key={x.l} style={{ padding:'6px 10px', background:'#f4f5f9', borderRadius:7 }}>
+                        <div style={{ fontSize:10, color:'#8892b0', marginBottom:2 }}>{x.l}</div>
+                        <div style={{ fontSize:12, fontWeight: x.bold ? 600 : 500, color:'#1a1d2e' }}>{x.v}</div>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
-                {/* Inline edit form */}
+                {/* ── Inline edit form ── */}
                 {isEditing && (() => {
                   const e = goalEdits[i] || {}
-                  const cur_saved   = e.currentSaved  !== undefined ? e.currentSaved  : g.currentSaved
-                  const cur_target  = e.targetAmount   !== undefined ? e.targetAmount  : g.targetAmount
-                  const cur_year    = e.targetYear     !== undefined ? e.targetYear    : g.targetYear
-                  const previewShortfall = Math.max(0, parseInt(cur_target)||0 - parseInt(cur_saved)||0)
-                  const previewYears    = Math.max(0, (parseInt(cur_year)||0) - new Date().getFullYear())
-                  const previewSIP      = previewYears > 0
-                    ? Math.round(previewShortfall / (previewYears * 12) * (1 + 0.12/12) ** (previewYears*12) / ((1+0.12/12) ** (previewYears*12) - 1) * (0.12/12) / (0.12/12))
-                    : previewShortfall
-                  const previewPct      = (parseInt(cur_target)||1) > 0 ? Math.min(100, Math.round((parseInt(cur_saved)||0) / (parseInt(cur_target)||1) * 100)) : 0
+                  // ── Single canonical SIP calculator (same logic as goalPlans derivation) ──
+                  // Use g.* as ground truth; only override if user actively changed a field
+                  // IMPORTANT: treat e.currentSaved=0 as "not set" (g.currentSaved is the real value)
+                  const editSaved  = (e.currentSaved !== undefined && e.currentSaved !== '' && parseInt(e.currentSaved) > 0)
+                    ? parseInt(e.currentSaved)
+                    : g.currentSaved   // always use the correctly derived value from goalPlans
+                  const editTarget = (e.targetAmount !== undefined && e.targetAmount !== '')
+                    ? parseInt(e.targetAmount)||0
+                    : g.targetAmount
+                  const editYear   = (e.targetYear !== undefined && e.targetYear !== '')
+                    ? e.targetYear
+                    : g.targetYear
+
+                  // returnRate: stored as decimal (0.12) after save, but show as % (12) in input
+                  const rawEditR   = e.returnRate !== undefined ? parseFloat(e.returnRate) : null
+                  const editReturn = rawEditR !== null
+                    ? (rawEditR <= 1 ? (rawEditR * 100).toFixed(1) : String(rawEditR))
+                    : (rr * 100).toFixed(0)  // rr is already decimal from goalPlans
+
+                  const pvShortfall = Math.max(0, editTarget - editSaved)
+                  const pvYears     = Math.max(0, (parseInt(editYear)||0) - new Date().getFullYear())
+                  const liveReturn  = (parseFloat(editReturn)||10) / 100
+
+                  // THE canonical SIP function — identical formula used in goalPlans derivation
+                  const calcSIPEdit = (sf, yrs, annRate) => {
+                    const mr = annRate / 12, nm = yrs * 12
+                    return nm > 0 && sf > 0 ? Math.round(sf * mr / (Math.pow(1 + mr, nm) - 1)) : (sf > 0 ? sf : 0)
+                  }
+                  const autoCalcSIP = calcSIPEdit(pvShortfall, pvYears, liveReturn)
+                  const liveSIP     = (e.monthlySIP !== undefined && e.monthlySIP !== '')
+                    ? parseInt(e.monthlySIP)||0
+                    : autoCalcSIP
+                  const livePct     = editTarget > 0 ? Math.min(100, Math.round(editSaved / editTarget * 100)) : 0
 
                   return (
-                    <div style={{ padding:'16px 20px', background:'rgba(200,146,10,0.02)' }}>
-                      {/* Goal name edit — full width */}
-                      <div style={{ marginBottom:12 }}>
+                    <div style={{ padding:'18px 20px', background:'rgba(200,146,10,0.02)' }}>
+                      {/* Goal name — full width */}
+                      <div style={{ marginBottom:14 }}>
                         <label style={{ fontSize:11, fontWeight:600, color:'#6b7494', display:'block', marginBottom:4 }}>Goal Name</label>
                         <input className="input" type="text"
                           value={e.goalName !== undefined ? e.goalName : g.goalName}
                           onChange={ev => setGoalEdits(p => ({...p, [i]: {...(p[i]||{}), goalName: ev.target.value}}))}
-                          placeholder="e.g. Child Education - Kavin"
                           style={{ width:'100%', boxSizing:'border-box', fontWeight:600 }} />
                       </div>
+
+                      {/* 2×2 grid */}
                       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:14 }}>
                         <div>
                           <label style={{ fontSize:11, fontWeight:600, color:'#6b7494', display:'block', marginBottom:4 }}>Current Saved (₹)</label>
                           <input className="input" type="number" min="0"
-                            value={e.currentSaved !== undefined ? e.currentSaved : g.currentSaved}
+                            value={e.currentSaved !== undefined && e.currentSaved !== '' ? e.currentSaved : editSaved}
                             onChange={ev => setGoalEdits(p => ({...p, [i]: {...(p[i]||{}), currentSaved: ev.target.value}}))}
                             style={{ width:'100%', boxSizing:'border-box' }} />
                         </div>
                         <div>
                           <label style={{ fontSize:11, fontWeight:600, color:'#6b7494', display:'block', marginBottom:4 }}>Target Amount (₹)</label>
                           <input className="input" type="number" min="0"
-                            value={e.targetAmount !== undefined ? e.targetAmount : g.targetAmount}
+                            value={e.targetAmount !== undefined && e.targetAmount !== '' ? e.targetAmount : editTarget}
                             onChange={ev => setGoalEdits(p => ({...p, [i]: {...(p[i]||{}), targetAmount: ev.target.value}}))}
                             style={{ width:'100%', boxSizing:'border-box' }} />
                         </div>
                         <div>
                           <label style={{ fontSize:11, fontWeight:600, color:'#6b7494', display:'block', marginBottom:4 }}>Target Year</label>
                           <input className="input" type="number" min={new Date().getFullYear()} max="2060"
-                            value={e.targetYear !== undefined ? e.targetYear : g.targetYear}
+                            value={e.targetYear !== undefined && e.targetYear !== '' ? e.targetYear : editYear}
                             onChange={ev => setGoalEdits(p => ({...p, [i]: {...(p[i]||{}), targetYear: ev.target.value}}))}
                             style={{ width:'100%', boxSizing:'border-box' }} />
                         </div>
                         <div>
                           <label style={{ fontSize:11, fontWeight:600, color:'#6b7494', display:'block', marginBottom:4 }}>
-                            Monthly SIP (₹)
-                            <span style={{ fontSize:10, fontWeight:400, color:'#b0b8d0', marginLeft:6 }}>override auto-calc</span>
+                            Expected Return (% p.a.)
                           </label>
-                          <input className="input" type="number" min="0"
-                            value={e.monthlySIP !== undefined ? e.monthlySIP : ''}
-                            placeholder={String(previewSIP)}
-                            onChange={ev => setGoalEdits(p => ({...p, [i]: {...(p[i]||{}), monthlySIP: ev.target.value}}))}
+                          <input className="input" type="number" min="1" max="30" step="0.5"
+                            value={editReturn}
+                            onChange={ev => setGoalEdits(p => ({...p, [i]: {...(p[i]||{}), returnRate: ev.target.value}}))}
                             style={{ width:'100%', boxSizing:'border-box' }} />
                         </div>
                       </div>
 
-                      {/* Live preview */}
-                      <div style={{ background:'rgba(200,146,10,0.06)', border:'1px solid rgba(200,146,10,0.2)', borderRadius:10, padding:'12px 16px', marginBottom:12 }}>
-                        <div style={{ fontSize:11, fontWeight:600, color:'#c8920a', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.05em' }}>Live Preview</div>
-                        <div style={{ display:'flex', gap:20, flexWrap:'wrap' }}>
+                      {/* Monthly SIP override — full width */}
+                      <div style={{ marginBottom:14 }}>
+                        <label style={{ fontSize:11, fontWeight:600, color:'#6b7494', display:'block', marginBottom:4 }}>
+                          Monthly SIP (₹)
+                          <span style={{ fontSize:10, fontWeight:400, color:'#b0b8d0', marginLeft:6 }}>leave blank to auto-calculate</span>
+                        </label>
+                        <input className="input" type="number" min="0"
+                          value={e.monthlySIP !== undefined ? e.monthlySIP : ''}
+                          placeholder={`Auto: ₹${autoCalcSIP.toLocaleString('en-IN')}`}
+                          onChange={ev => setGoalEdits(p => ({...p, [i]: {...(p[i]||{}), monthlySIP: ev.target.value}}))}
+                          style={{ width:'100%', boxSizing:'border-box' }} />
+                      </div>
+
+                      {/* Live preview — single source of truth */}
+                      <div style={{ background:'rgba(200,146,10,0.06)', border:'1px solid rgba(200,146,10,0.2)', borderRadius:10, padding:'14px 16px', marginBottom:14 }}>
+                        <div style={{ fontSize:10, fontWeight:700, color:'#c8920a', letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:10 }}>Live Preview</div>
+                        <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12 }}>
                           {[
-                            { l:'Remaining', v:`₹${previewShortfall.toLocaleString('en-IN')}` },
-                            { l:'Monthly SIP', v:`₹${previewSIP.toLocaleString('en-IN')}/mo`, c:'#c8920a' },
-                            { l:'Progress', v:`${previewPct}%`, c: previewPct>=50?'#16a34a':'#c8920a' },
-                            { l:'Years Left', v:`${previewYears} yrs` },
+                            { l:'Remaining', v:`₹${pvShortfall.toLocaleString('en-IN')}`, hint:`of ₹${editTarget.toLocaleString('en-IN')}`, c:'#1a1d2e' },
+                            { l:'Monthly SIP', v:`₹${liveSIP.toLocaleString('en-IN')}/mo`, c:'#c8920a', bold:true },
+                            { l:'Progress', v:`${livePct}%`, c: livePct>=50?'#16a34a':livePct>=25?'#c8920a':'#dc2626' },
+                            { l:'Years Left', v:`${pvYears} yrs`, c:'#1a1d2e' },
                           ].map(x => (
-                            <div key={x.l}>
-                              <div style={{ fontSize:10, color:'#8892b0' }}>{x.l}</div>
-                              <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:14, fontWeight:700, color: x.c||'#1a1d2e' }}>{x.v}</div>
+                            <div key={x.l} style={{ textAlign:'center', padding:'8px 6px', background:'rgba(255,255,255,0.6)', borderRadius:8 }}>
+                              <div style={{ fontSize:10, color:'#8892b0', marginBottom:4 }}>{x.l}</div>
+                              <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:13, fontWeight: x.bold?700:600, color:x.c }}>{x.v}</div>
                             </div>
                           ))}
                         </div>
@@ -1361,7 +1531,7 @@ export function FinancialPlanTab() {
 
                       <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
                         <button className="btn btn-outline btn-sm" onClick={() => setEditingGoal(null)}>Cancel</button>
-                        <button className="btn btn-gold btn-sm" onClick={() => saveGoalEdit(i, goalEdits[i]||{})}>Save Goal</button>
+                        <button className="btn btn-gold btn-sm" onClick={() => saveGoalEdit(i, {...(goalEdits[i]||{})})}>Save Goal</button>
                       </div>
                     </div>
                   )
@@ -1370,7 +1540,7 @@ export function FinancialPlanTab() {
             )
           })}
         </div>
-      )}
+            )}
 
       {/* ── PROTECTION SECTION ────────────────────────────────────────────────── */}
       {activeSection === 'protection' && (() => {
@@ -1801,6 +1971,65 @@ export function FinancialPlanTab() {
                   <button className="btn btn-gold btn-sm" onClick={() => saveGoalMap(mapModal, [...tempSelected])}>Save Mapping</button>
                 </div>
               </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── How SIP is Calculated — Example Box ──────────────────────────── */}
+      {activeSection === 'goals' && goalPlans.length > 0 && (() => {
+        const exGoal   = goalPlans.find(g => /education|child/i.test(g.goalName)) || goalPlans[0]
+        const todayVal = parseInt(exGoal.todayValue || exGoal.targetAmount) || 0
+        const ir       = exGoal.inflationRate || 0
+        const rr2      = exGoal.returnRate || 0.12
+        const yrs      = exGoal.yearsLeft || 5
+        const inflated = ir > 0 ? Math.round(todayVal * Math.pow(1 + ir, yrs)) : todayVal
+        const saved    = exGoal.currentSaved || 0
+        const sfAmt    = Math.max(0, inflated - saved)
+        const r2       = rr2 / 12, n2 = yrs * 12
+        const sip2     = n2 > 0 && sfAmt > 0 ? Math.round(sfAmt * r2 / (Math.pow(1+r2, n2) - 1)) : sfAmt
+        return (
+          <div className="card" style={{ padding:24, background:'rgba(26,29,46,0.97)', border:'none', borderRadius:14 }}>
+            <div style={{ fontSize:11, letterSpacing:'0.1em', color:'#c8920a', fontWeight:600, textTransform:'uppercase', marginBottom:8 }}>
+              📐 How We Calculate Your Monthly SIP
+            </div>
+            <div style={{ fontFamily:"'Cormorant Garamond',serif", fontSize:17, color:'#fff', fontWeight:600, marginBottom:16 }}>
+              Example: {exGoal.goalName}
+            </div>
+            <div style={{ display:'grid', gap:10 }}>
+              {[
+                { step:'1', label:"Today's Goal Value",
+                  calc:`₹${todayVal.toLocaleString('en-IN')} (amount entered in today's rupees)`,
+                  result:`₹${todayVal.toLocaleString('en-IN')}` },
+                { step:'2', label:'Inflation-Adjusted Future Target',
+                  calc: ir > 0 ? `₹${todayVal.toLocaleString('en-IN')} × (1 + ${(ir*100).toFixed(0)}%)^${yrs} yrs` : 'No inflation applied for this goal type',
+                  formula:'FV = PV × (1 + i)ⁿ',
+                  result:`₹${inflated.toLocaleString('en-IN')}` },
+                { step:'3', label:'Shortfall to Fund',
+                  calc:`₹${inflated.toLocaleString('en-IN')} − ₹${saved.toLocaleString('en-IN')} (already saved)`,
+                  result:`₹${sfAmt.toLocaleString('en-IN')}` },
+                { step:'4', label:'Monthly SIP Required',
+                  calc:`₹${sfAmt.toLocaleString('en-IN')} × (${(rr2*100).toFixed(0)}%÷12) ÷ [(1 + ${(rr2*100).toFixed(0)}%÷12)^${n2} − 1]`,
+                  formula:'SIP = Shortfall × r / [(1+r)ⁿ − 1]   where r = annual rate ÷ 12',
+                  result:`₹${sip2.toLocaleString('en-IN')}/mo`, highlight:true },
+              ].map(s => (
+                <div key={s.step} style={{ display:'flex', gap:14, alignItems:'flex-start', padding:'12px 14px',
+                  background: s.highlight ? 'rgba(200,146,10,0.12)' : 'rgba(255,255,255,0.05)',
+                  borderRadius:10, border:`1px solid ${s.highlight ? 'rgba(200,146,10,0.3)' : 'rgba(255,255,255,0.08)'}` }}>
+                  <div style={{ width:26, height:26, borderRadius:'50%', background:'#c8920a', display:'flex', alignItems:'center',
+                    justifyContent:'center', fontSize:12, fontWeight:700, color:'#fff', flexShrink:0 }}>{s.step}</div>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:12, fontWeight:600, color:'rgba(255,255,255,0.9)', marginBottom:3 }}>{s.label}</div>
+                    <div style={{ fontSize:11, color:'rgba(255,255,255,0.45)', fontFamily:"'JetBrains Mono',monospace", marginBottom: s.formula ? 3 : 0 }}>{s.calc}</div>
+                    {s.formula && <div style={{ fontSize:10, color:'#c8920a', fontStyle:'italic' }}>Formula: {s.formula}</div>}
+                  </div>
+                  <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize: s.highlight ? 16 : 14, fontWeight:700,
+                    color: s.highlight ? '#c8920a' : 'rgba(255,255,255,0.85)', flexShrink:0 }}>{s.result}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop:10, fontSize:11, color:'rgba(255,255,255,0.3)', lineHeight:1.6 }}>
+              * Assumes {(rr2*100).toFixed(0)}% p.a. expected return (monthly compounding) and {ir>0?`${(ir*100).toFixed(0)}% annual inflation`:'no inflation adjustment'}. Equity returns are not guaranteed — adjust the Expected Return % per goal based on your risk profile.
             </div>
           </div>
         )

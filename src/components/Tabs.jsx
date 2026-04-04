@@ -2241,6 +2241,44 @@ export function Settings({ onToast }) {
     onToast(`Sector detected and filled for ${changed} holding${changed > 1 ? 's' : ''}`, 'success')
   }
 
+  // Fix Inflation — apply inflation to goals that were created without it
+  const fixInflation = () => {
+    if (!session?.userId) return
+    try {
+      const stored = localStorage.getItem(`wr_profile_${session.userId}`)
+      if (!stored) { onToast('No profile found', 'info'); return }
+      const profile = JSON.parse(stored)
+      const goals = profile.goals || []
+      if (!goals.length) { onToast('No goals to fix', 'info'); return }
+
+      const INFLATION_RATES = {
+        emergency:0, home:0.08, car:0.06, education:0.10, wedding:0.06,
+        travel:0.06, retirement:0.06, business:0.07, gadget:0.04, custom:0.06,
+      }
+      const RETURN_RATES_LOCAL = {
+        emergency:0.07, home:0.10, car:0.08, education:0.12, wedding:0.09,
+        travel:0.08, retirement:0.12, business:0.11, gadget:0.07, custom:0.10,
+      }
+      let changed = 0
+      const updated = goals.map(g => {
+        const returnRate = g.returnRate || RETURN_RATES_LOCAL[g.type] || 0.10
+        if (g.inflationAdjusted && g.returnRate) return g  // already fully set
+        const rate = INFLATION_RATES[g.type] || INFLATION_RATES.custom
+        if (rate === 0) return { ...g, inflationRate: 0, inflationAdjusted: false, returnRate }
+        const years = (parseInt(g.targetYear)||0) - new Date().getFullYear()
+        if (years <= 0) return { ...g, returnRate }
+        const rawTarget = parseInt(g.todayValue || g.targetAmount) || 0
+        const inflated  = Math.round(rawTarget * Math.pow(1 + rate, years))
+        changed++
+        return { ...g, inflationRate: rate, returnRate, inflationAdjusted: true, todayValue: rawTarget, targetAmount: inflated }
+      })
+      localStorage.setItem(`wr_profile_${session.userId}`, JSON.stringify({ ...profile, goals: updated }))
+      onToast(changed > 0 ? `Inflation applied to ${changed} goal${changed>1?'s':''}. Reload My Goals to see updates.` : 'All goals already have inflation applied', 'success')
+    } catch (e) {
+      onToast('Error: ' + e.message, 'error')
+    }
+  }
+
   const printReport = () => {
     const c = CURRENCIES.find(x => x.code === settings.currency) || CURRENCIES[0]
     const fmt = (n) => `${c.symbol}${Math.round(n).toLocaleString()}`
@@ -2391,6 +2429,25 @@ export function Settings({ onToast }) {
               className="btn btn-outline btn-sm"
               style={{ flexShrink: 0, marginLeft: 16 }}
               onClick={fixNameCasing}>
+              Fix Now
+            </button>
+          </div>
+
+          {/* Fix Goal Inflation */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', background: '#f8f9fc', borderRadius: 10, border: '1px solid rgba(200,146,10,0.3)' }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 500, color: '#1a1d2e', marginBottom: 3 }}>
+                Apply Inflation to Goals
+                <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 600, color: '#c8920a', background: 'rgba(200,146,10,0.1)', padding: '2px 7px', borderRadius: 20 }}>NEW</span>
+              </div>
+              <div style={{ fontSize: 12, color: '#8892b0' }}>
+                Recalculates target amounts for existing goals using inflation (Education 10%, Home 8%, Car 6%, etc.). Skips goals already adjusted.
+              </div>
+            </div>
+            <button
+              className="btn btn-outline btn-sm"
+              style={{ flexShrink: 0, marginLeft: 16, borderColor: '#c8920a', color: '#c8920a' }}
+              onClick={fixInflation}>
               Fix Now
             </button>
           </div>
