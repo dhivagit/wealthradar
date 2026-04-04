@@ -39,6 +39,39 @@ const INFLATION_RATES = {
   custom:     0.06,
 }
 
+// Instrument recommendations by years left + horizon
+function getGoalRecommendation(yearsLeft, horizon, goalType) {
+  // Short-term (<= 2 years): capital preservation
+  if (yearsLeft <= 2) {
+    return 'Liquid Fund, Short-term FD'
+  }
+  // Short-medium (3-4 years)
+  if (yearsLeft <= 4) {
+    if (goalType === 'emergency') return 'Liquid Fund, FD, Overnight Fund'
+    return 'Debt MF (Short Duration), FD, Conservative Hybrid MF'
+  }
+  // Medium (5-7 years)
+  if (yearsLeft <= 7) {
+    if (goalType === 'education') return 'Equity MF 50%, Debt MF 50%'
+    if (goalType === 'home')      return 'Balanced Advantage Fund, Debt MF'
+    if (goalType === 'car')       return 'Hybrid MF, Debt MF, FD'
+    if (goalType === 'retirement') return 'Equity MF 60%, NPS, PPF'
+    return 'Balanced Advantage Fund, Hybrid MF'
+  }
+  // Long-term (8-14 years)
+  if (yearsLeft <= 14) {
+    if (goalType === 'education') return 'Equity MF 70%, ELSS, SSA'
+    if (goalType === 'retirement') return 'Equity MF 70%, NPS, PPF'
+    if (goalType === 'home')      return 'Equity MF 60%, Debt MF 40%'
+    return 'Equity MF 65%, Debt MF 35%'
+  }
+  // Very long-term (15+ years)
+  if (goalType === 'education') return 'Equity MF 80%, ELSS, SSA'
+  if (goalType === 'retirement') return 'Equity MF 75%, NPS (Tier 1), PPF'
+  if (goalType === 'home')      return 'Equity MF 70%, Debt MF 30%'
+  return 'Equity MF 75%, Debt MF 25%'
+}
+
 // Expected return rates by goal type (equity for long-term, debt for short-term)
 const RETURN_RATES = {
   emergency:  0.07,  // liquid/FD — 7%
@@ -1136,16 +1169,20 @@ export function FinancialPlanTab() {
       : (shortfall > 0 ? shortfall : 0)
     const monthlySIP    = e.monthlySIP !== undefined && e.monthlySIP !== '' ? parseInt(e.monthlySIP)||0 : autoSIP
     const pct           = targetAmount > 0 ? Math.min(100, Math.round(currentSaved / targetAmount * 100)) : 0
+    // Generate instrument recommendation locally (more reliable than AI)
+    const localInstrument = getGoalRecommendation(yearsLeft, pg.horizon || 'medium', pg.type || 'custom')
+
     return {
       ...ai,
       goalName, targetAmount, targetYear, currentSaved,
       yearsLeft, shortfall, monthlySIP, pct, index: i,
       returnRate, inflationRate,
       inflationAdjusted: pg.inflationAdjusted,
-      todayValue: pg.todayValue,
+      todayValue: e.todayValue !== undefined && e.todayValue !== '' ? parseInt(e.todayValue)||0 : pg.todayValue,
+      type: pg.type,
       icon: pg.icon || ai.icon || '🎯',
-      instrument: ai.instrument || '',
-      advice:     ai.advice     || '',
+      instrument: localInstrument,   // always use local recommendation
+      advice: ai.advice || '',
     }
   })
 
@@ -1219,6 +1256,7 @@ export function FinancialPlanTab() {
         ...(fields.targetAmount !== undefined ? { targetAmount:fields.targetAmount }  : {}),
         ...(fields.targetYear   !== undefined ? { targetYear:  fields.targetYear }    : {}),
         ...(fields.currentSaved !== undefined ? { currentSaved:fields.currentSaved }  : {}),
+        ...(fields.todayValue   !== undefined ? { todayValue:  fields.todayValue }    : {}),
       }
     })
     const updatedProfile = { ...(profile||{}), goals: updatedProfileGoals }
@@ -1400,20 +1438,29 @@ export function FinancialPlanTab() {
                   </div>
 
                   {/* Goal meta row */}
-                  <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(120px, 1fr))', gap:10 }}>
+                  <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(110px, 1fr))', gap:8 }}>
                     {[
-                      { l:'Target', v:`₹${g.targetAmount.toLocaleString('en-IN')}` + (g.inflationAdjusted ? ' ↑' : ''), bold: true },
-                      { l:"Today's Value", v: g.todayValue && g.todayValue !== g.targetAmount ? `₹${parseInt(g.todayValue).toLocaleString('en-IN')}` : null },
-                      { l:'Target Year', v: g.targetYear },
-                      { l:'Years Left', v: `${g.yearsLeft} yrs` },
-                      { l:'Recommended', v: g.instrument || null },
-                    ].filter(x => x.v).map(x => (
-                      <div key={x.l} style={{ padding:'6px 10px', background:'#f4f5f9', borderRadius:7 }}>
+                      { l:'Inflation Target', v:`₹${g.targetAmount.toLocaleString('en-IN')}${g.inflationAdjusted?' ↑':''}`, bold:true,
+                        hint: g.inflationAdjusted ? 'Inflation-adjusted' : '' },
+                      { l:"Today's Value", v:`₹${parseInt(g.todayValue||g.targetAmount).toLocaleString('en-IN')}`,
+                        hint: g.inflationRate > 0 ? `Before ${(g.inflationRate*100).toFixed(0)}% inflation` : '' },
+                      { l:'Target Year', v: String(g.targetYear) },
+                      { l:'Years Left',  v: `${g.yearsLeft} yrs` },
+                    ].map(x => (
+                      <div key={x.l} style={{ padding:'8px 10px', background:'#f4f5f9', borderRadius:8, borderLeft: x.bold ? '3px solid #c8920a' : 'none' }}>
                         <div style={{ fontSize:10, color:'#8892b0', marginBottom:2 }}>{x.l}</div>
-                        <div style={{ fontSize:12, fontWeight: x.bold ? 600 : 500, color:'#1a1d2e' }}>{x.v}</div>
+                        <div style={{ fontSize:12, fontWeight: x.bold ? 700 : 500, color:'#1a1d2e' }}>{x.v}</div>
+                        {x.hint && <div style={{ fontSize:9, color:'#c8920a', marginTop:1 }}>{x.hint}</div>}
                       </div>
                     ))}
                   </div>
+                  {/* Recommendation pill */}
+                  {g.instrument && (
+                    <div style={{ marginTop:8, padding:'6px 12px', background:'rgba(91,143,249,0.07)', border:'1px solid rgba(91,143,249,0.18)', borderRadius:20, display:'inline-flex', alignItems:'center', gap:6 }}>
+                      <span style={{ fontSize:11 }}>📌</span>
+                      <span style={{ fontSize:11, fontWeight:600, color:'#3b5bdb' }}>{g.instrument}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* ── Inline edit form ── */}
@@ -1464,7 +1511,26 @@ export function FinancialPlanTab() {
                           style={{ width:'100%', boxSizing:'border-box', fontWeight:600 }} />
                       </div>
 
-                      {/* 2×2 grid */}
+                      {/* FIX 3: Reverse-calculate target if SIP is manually set */}
+                      {(() => {
+                        const manualSIP = e.monthlySIP !== undefined && e.monthlySIP !== '' ? parseInt(e.monthlySIP)||0 : 0
+                        const reverseTarget = manualSIP > 0 && pvYears > 0
+                          ? Math.round(manualSIP * (Math.pow(1 + liveReturn/12, pvYears*12) - 1) / (liveReturn/12)) + editSaved
+                          : null
+                        return reverseTarget ? (
+                          <div style={{ marginBottom:14, padding:'10px 14px', background:'rgba(91,143,249,0.06)', border:'1px solid rgba(91,143,249,0.2)', borderRadius:10 }}>
+                            <div style={{ fontSize:11, color:'#5b8ff9', fontWeight:600, marginBottom:2 }}>💡 With SIP of ₹{manualSIP.toLocaleString('en-IN')}/mo for {pvYears} yrs at {(liveReturn*100).toFixed(0)}% return:</div>
+                            <div style={{ fontSize:13, fontWeight:700, color:'#1a1d2e' }}>
+                              Expected corpus: ₹{reverseTarget.toLocaleString('en-IN')}
+                              <span style={{ fontSize:11, fontWeight:400, color:'#8892b0', marginLeft:8 }}>
+                                (vs current target ₹{editTarget.toLocaleString('en-IN')})
+                              </span>
+                            </div>
+                          </div>
+                        ) : null
+                      })()}
+
+                      {/* Fields grid — 2 columns */}
                       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:14 }}>
                         <div>
                           <label style={{ fontSize:11, fontWeight:600, color:'#6b7494', display:'block', marginBottom:4 }}>Current Saved (₹)</label>
@@ -1474,7 +1540,26 @@ export function FinancialPlanTab() {
                             style={{ width:'100%', boxSizing:'border-box' }} />
                         </div>
                         <div>
-                          <label style={{ fontSize:11, fontWeight:600, color:'#6b7494', display:'block', marginBottom:4 }}>Target Amount (₹)</label>
+                          <label style={{ fontSize:11, fontWeight:600, color:'#6b7494', display:'block', marginBottom:4 }}>
+                            Today's Value (₹)
+                            <span style={{ fontSize:10, fontWeight:400, color:'#b0b8d0', marginLeft:4 }}>before inflation</span>
+                          </label>
+                          <input className="input" type="number" min="0"
+                            value={e.todayValue !== undefined && e.todayValue !== '' ? e.todayValue : (g.todayValue || g.targetAmount)}
+                            onChange={ev => {
+                              const tv = parseInt(ev.target.value)||0
+                              const yrsForCalc = pvYears
+                              const ir2 = g.inflationRate || 0
+                              const newInflated = ir2 > 0 ? Math.round(tv * Math.pow(1 + ir2, yrsForCalc)) : tv
+                              setGoalEdits(p => ({...p, [i]: {...(p[i]||{}), todayValue: ev.target.value, targetAmount: newInflated}}))
+                            }}
+                            style={{ width:'100%', boxSizing:'border-box' }} />
+                        </div>
+                        <div>
+                          <label style={{ fontSize:11, fontWeight:600, color:'#6b7494', display:'block', marginBottom:4 }}>
+                            Target Amount (₹)
+                            <span style={{ fontSize:10, fontWeight:400, color:'#b0b8d0', marginLeft:4 }}>inflation-adjusted</span>
+                          </label>
                           <input className="input" type="number" min="0"
                             value={e.targetAmount !== undefined && e.targetAmount !== '' ? e.targetAmount : editTarget}
                             onChange={ev => setGoalEdits(p => ({...p, [i]: {...(p[i]||{}), targetAmount: ev.target.value}}))}
@@ -1496,19 +1581,17 @@ export function FinancialPlanTab() {
                             onChange={ev => setGoalEdits(p => ({...p, [i]: {...(p[i]||{}), returnRate: ev.target.value}}))}
                             style={{ width:'100%', boxSizing:'border-box' }} />
                         </div>
-                      </div>
-
-                      {/* Monthly SIP override — full width */}
-                      <div style={{ marginBottom:14 }}>
-                        <label style={{ fontSize:11, fontWeight:600, color:'#6b7494', display:'block', marginBottom:4 }}>
-                          Monthly SIP (₹)
-                          <span style={{ fontSize:10, fontWeight:400, color:'#b0b8d0', marginLeft:6 }}>leave blank to auto-calculate</span>
-                        </label>
-                        <input className="input" type="number" min="0"
-                          value={e.monthlySIP !== undefined ? e.monthlySIP : ''}
-                          placeholder={`Auto: ₹${autoCalcSIP.toLocaleString('en-IN')}`}
-                          onChange={ev => setGoalEdits(p => ({...p, [i]: {...(p[i]||{}), monthlySIP: ev.target.value}}))}
-                          style={{ width:'100%', boxSizing:'border-box' }} />
+                        <div>
+                          <label style={{ fontSize:11, fontWeight:600, color:'#6b7494', display:'block', marginBottom:4 }}>
+                            Monthly SIP (₹)
+                            <span style={{ fontSize:10, fontWeight:400, color:'#b0b8d0', marginLeft:4 }}>blank = auto</span>
+                          </label>
+                          <input className="input" type="number" min="0"
+                            value={e.monthlySIP !== undefined ? e.monthlySIP : ''}
+                            placeholder={`Auto: ₹${autoCalcSIP.toLocaleString('en-IN')}`}
+                            onChange={ev => setGoalEdits(p => ({...p, [i]: {...(p[i]||{}), monthlySIP: ev.target.value}}))}
+                            style={{ width:'100%', boxSizing:'border-box' }} />
+                        </div>
                       </div>
 
                       {/* Live preview — single source of truth */}
