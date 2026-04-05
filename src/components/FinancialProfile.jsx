@@ -1094,6 +1094,7 @@ export function FinancialPlanTab() {
   const [goalMap,      setGoalMap]      = useState({})     // {goalName: [assetId,...]}
   const [mapModal,     setMapModal]     = useState(null)   // goalName being mapped
   const [tempSelected, setTempSelected] = useState(new Set())  // asset selection in map modal
+  const [linkedTooltip, setLinkedTooltip] = useState(null)  // index of goal showing linked assets tooltip
 
   // ── Load saved data ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1153,7 +1154,13 @@ export function FinancialPlanTab() {
     // Amounts: user edit > profile wizard entry > AI suggestion
     const targetAmount = parseInt(e.targetAmount ?? pg.targetAmount ?? ai.targetAmount ?? 0)
     const targetYear   = e.targetYear   ?? pg.targetYear    ?? ai.targetYear  ?? ''
-    const currentSaved = parseInt(e.currentSaved ?? savedAmounts[i]?.currentSaved ?? pg.currentSaved ?? ai.currentSaved ?? 0)
+    // Linked assets value — sum of all assets mapped to this goal
+    const mappedAssets = (goalMap[goalName] || []).map(id => (data?.assets||[]).find(a => a.id === id)).filter(Boolean)
+    const linkedValue  = mappedAssets.reduce((s, a) => s + (a.value||0), 0)
+    // Fix 1: If assets are linked, their total value IS the currentSaved (overrides manual entry)
+    const currentSaved = linkedValue > 0
+      ? linkedValue
+      : parseInt(e.currentSaved ?? savedAmounts[i]?.currentSaved ?? pg.currentSaved ?? ai.currentSaved ?? 0)
     const yearsLeft     = Math.max(0, (parseInt(targetYear)||0) - new Date().getFullYear())
     const shortfall     = Math.max(0, targetAmount - currentSaved)
     // Per-goal return rate — normalize to decimal (e.returnRate stored as % string e.g."8", pg.returnRate as decimal 0.08)
@@ -1372,6 +1379,8 @@ export function FinancialPlanTab() {
             const isEditing = editingGoal === i
             const mapped = (goalMap[g.goalName] || []).map(id => assets.find(a => a.id === id)).filter(Boolean)
             const mappedValue = mapped.reduce((s,a) => s+(a.value||0), 0)
+            const isLinked = mapped.length > 0
+            // g.currentSaved already equals mappedValue (from goalPlans derivation) when assets linked
             const pctColor = g.pct >= 100 ? '#16a34a' : g.pct >= 60 ? '#c8920a' : g.pct >= 30 ? '#f09b46' : '#dc2626'
 
             // All SIP calculations use the SAME returnRate so they stay consistent
@@ -1387,7 +1396,7 @@ export function FinancialPlanTab() {
                 <div style={{ padding:'16px 20px', background: isEditing ? 'rgba(200,146,10,0.04)' : '#fafbfc',
                   display:'flex', justifyContent:'space-between', alignItems:'center', cursor:'pointer',
                   borderBottom:'1px solid #eef0f8' }}
-                  onClick={() => setEditingGoal(isEditing ? null : i)}>
+                  onClick={() => { setEditingGoal(isEditing ? null : i); setLinkedTooltip(null) }}>
                   <div style={{ display:'flex', alignItems:'center', gap:10 }}>
                     <span style={{ fontSize:22 }}>{g.icon}</span>
                     <div>
@@ -1402,8 +1411,48 @@ export function FinancialPlanTab() {
                           💹 {(rr*100).toFixed(0)}% returns p.a.
                         </span>
                         {mapped.length > 0 && (
-                          <span style={{ fontSize:10, fontWeight:600, color:'#059669', background:'rgba(5,150,105,0.08)', padding:'1px 7px', borderRadius:10 }}>
-                            🔗 {mapped.length} asset{mapped.length>1?'s':''}
+                          <span
+                            onClick={ev => { ev.stopPropagation(); setLinkedTooltip(linkedTooltip === i ? null : i) }}
+                            style={{ fontSize:10, fontWeight:600, color:'#059669', background:'rgba(5,150,105,0.08)',
+                              border:'1px solid rgba(5,150,105,0.25)', padding:'1px 8px', borderRadius:10,
+                              cursor:'pointer', position:'relative', userSelect:'none' }}
+                            title="Click to see linked assets">
+                            🔗 {mapped.length} asset{mapped.length>1?'s':''} ▾
+                            {/* Linked assets popover */}
+                            {linkedTooltip === i && (
+                              <div onClick={ev => ev.stopPropagation()}
+                                style={{ position:'absolute', top:'calc(100% + 6px)', left:0, zIndex:500,
+                                  background:'#fff', borderRadius:10, boxShadow:'0 8px 30px rgba(0,0,0,0.15)',
+                                  border:'1px solid #eef0f8', padding:'10px 0', minWidth:260, maxWidth:320 }}>
+                                <div style={{ padding:'4px 14px 8px', fontSize:10, fontWeight:700, color:'#8892b0',
+                                  textTransform:'uppercase', letterSpacing:'0.06em', borderBottom:'1px solid #f0f2f8', marginBottom:4 }}>
+                                  Linked Investments · ₹{mappedValue.toLocaleString('en-IN')} total
+                                </div>
+                                {mapped.map((a, ai2) => (
+                                  <div key={a.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
+                                    padding:'6px 14px', gap:10, borderBottom: ai2 < mapped.length-1 ? '1px solid #f8f9fc' : 'none' }}>
+                                    <div style={{ minWidth:0 }}>
+                                      <div style={{ fontSize:12, fontWeight:600, color:'#1a1d2e',
+                                        overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:160 }}>{a.name}</div>
+                                      <div style={{ fontSize:10, color:'#8892b0', marginTop:1 }}>{a.category}</div>
+                                    </div>
+                                    <div style={{ textAlign:'right', flexShrink:0 }}>
+                                      <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, fontWeight:700,
+                                        color:'#059669' }}>₹{(a.value||0).toLocaleString('en-IN')}</div>
+                                      {a._plPct !== undefined && (
+                                        <div style={{ fontSize:10, color: a._plPct >= 0 ? '#16a34a' : '#dc2626' }}>
+                                          {a._plPct >= 0 ? '+' : ''}{(a._plPct||0).toFixed(1)}%
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                                <div style={{ padding:'8px 14px 2px', fontSize:11, color:'#8892b0',
+                                  borderTop:'1px solid #f0f2f8', marginTop:2 }}>
+                                  ↑ Used as Current Saved amount
+                                </div>
+                              </div>
+                            )}
                           </span>
                         )}
                       </div>
@@ -1426,8 +1475,14 @@ export function FinancialPlanTab() {
                   {/* Progress bar */}
                   <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, marginBottom:5 }}>
                     <span style={{ color:'#6b7494' }}>
-                      ₹{g.currentSaved.toLocaleString('en-IN')} saved
-                      {mappedValue > 0 && <span style={{ color:'#059669', marginLeft:4 }}>(+₹{mappedValue.toLocaleString('en-IN')} linked)</span>}
+                      {isLinked ? (
+                        <span>
+                          <span style={{ fontWeight:600, color:'#059669' }}>₹{mappedValue.toLocaleString('en-IN')}</span>
+                          <span style={{ color:'#059669', marginLeft:4 }}>from {mapped.length} linked asset{mapped.length>1?'s':''}</span>
+                        </span>
+                      ) : (
+                        <span>₹{g.currentSaved.toLocaleString('en-IN')} saved</span>
+                      )}
                     </span>
                     <span style={{ fontWeight:600, color: pctColor }}>{g.pct}% · ₹{g.shortfall.toLocaleString('en-IN')} to go</span>
                   </div>
@@ -1533,11 +1588,19 @@ export function FinancialPlanTab() {
                       {/* Fields grid — 2 columns */}
                       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:14 }}>
                         <div>
-                          <label style={{ fontSize:11, fontWeight:600, color:'#6b7494', display:'block', marginBottom:4 }}>Current Saved (₹)</label>
+                          <label style={{ fontSize:11, fontWeight:600, color:'#6b7494', display:'block', marginBottom:4 }}>
+                            Current Saved (₹)
+                            {isLinked && <span style={{ fontSize:10, fontWeight:400, color:'#059669', marginLeft:4 }}>← from linked assets</span>}
+                          </label>
                           <input className="input" type="number" min="0"
-                            value={e.currentSaved !== undefined && e.currentSaved !== '' ? e.currentSaved : editSaved}
-                            onChange={ev => setGoalEdits(p => ({...p, [i]: {...(p[i]||{}), currentSaved: ev.target.value}}))}
-                            style={{ width:'100%', boxSizing:'border-box' }} />
+                            value={isLinked ? mappedValue : (e.currentSaved !== undefined && e.currentSaved !== '' ? e.currentSaved : editSaved)}
+                            readOnly={isLinked}
+                            onChange={ev => !isLinked && setGoalEdits(p => ({...p, [i]: {...(p[i]||{}), currentSaved: ev.target.value}}))}
+                            style={{ width:'100%', boxSizing:'border-box', background: isLinked ? 'rgba(5,150,105,0.05)' : undefined,
+                              color: isLinked ? '#059669' : undefined, cursor: isLinked ? 'not-allowed' : undefined }} />
+                          {isLinked && <div style={{ fontSize:10, color:'#059669', marginTop:3 }}>
+                            Auto-updated from: {mapped.map(a=>a.name).join(', ')}
+                          </div>}
                         </div>
                         <div>
                           <label style={{ fontSize:11, fontWeight:600, color:'#6b7494', display:'block', marginBottom:4 }}>
