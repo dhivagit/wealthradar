@@ -1428,25 +1428,42 @@ export function FinancialPlanTab() {
                                   textTransform:'uppercase', letterSpacing:'0.06em', borderBottom:'1px solid #f0f2f8', marginBottom:4 }}>
                                   Linked Investments · ₹{mappedValue.toLocaleString('en-IN')} total
                                 </div>
-                                {mapped.map((a, ai2) => (
-                                  <div key={a.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
-                                    padding:'6px 14px', gap:10, borderBottom: ai2 < mapped.length-1 ? '1px solid #f8f9fc' : 'none' }}>
-                                    <div style={{ minWidth:0 }}>
-                                      <div style={{ fontSize:12, fontWeight:600, color:'#1a1d2e',
-                                        overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:160 }}>{a.name}</div>
-                                      <div style={{ fontSize:10, color:'#8892b0', marginTop:1 }}>{a.category}</div>
+                                {(() => {
+                                  // Group: direct stocks as one summary row, everything else listed individually
+                                  const directStocks = mapped.filter(a => a.category === 'Stocks & Equities')
+                                  const otherAssets  = mapped.filter(a => a.category !== 'Stocks & Equities')
+                                  const stockTotal   = directStocks.reduce((s,a) => s+(a.value||0), 0)
+                                  const rows = [
+                                    // Direct stocks: one summary row
+                                    ...(directStocks.length > 0 ? [{
+                                      id: '__stocks__', isSummary: true,
+                                      name: `Direct Stocks (${directStocks.length} holdings)`,
+                                      category: 'Stocks & Equities', value: stockTotal,
+                                    }] : []),
+                                    // All other assets: individual rows
+                                    ...otherAssets,
+                                  ]
+                                  return rows.map((a, ai2) => (
+                                    <div key={a.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
+                                      padding:'7px 14px', gap:10, borderBottom: ai2 < rows.length-1 ? '1px solid #f8f9fc' : 'none',
+                                      background: a.isSummary ? 'rgba(91,143,249,0.04)' : 'transparent' }}>
+                                      <div style={{ minWidth:0 }}>
+                                        <div style={{ fontSize:12, fontWeight:600, color: a.isSummary ? '#5b8ff9' : '#1a1d2e',
+                                          overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:170 }}>{a.name}</div>
+                                        <div style={{ fontSize:10, color:'#8892b0', marginTop:1 }}>{a.category}</div>
+                                      </div>
+                                      <div style={{ textAlign:'right', flexShrink:0 }}>
+                                        <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, fontWeight:700,
+                                          color:'#059669' }}>₹{(a.value||0).toLocaleString('en-IN')}</div>
+                                        {!a.isSummary && a._plPct !== undefined && (
+                                          <div style={{ fontSize:10, color: a._plPct >= 0 ? '#16a34a' : '#dc2626' }}>
+                                            {a._plPct >= 0 ? '+' : ''}{(a._plPct||0).toFixed(1)}%
+                                          </div>
+                                        )}
+                                      </div>
                                     </div>
-                                    <div style={{ textAlign:'right', flexShrink:0 }}>
-                                      <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, fontWeight:700,
-                                        color:'#059669' }}>₹{(a.value||0).toLocaleString('en-IN')}</div>
-                                      {a._plPct !== undefined && (
-                                        <div style={{ fontSize:10, color: a._plPct >= 0 ? '#16a34a' : '#dc2626' }}>
-                                          {a._plPct >= 0 ? '+' : ''}{(a._plPct||0).toFixed(1)}%
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                ))}
+                                  ))
+                                })()}
                                 <div style={{ padding:'8px 14px 2px', fontSize:11, color:'#8892b0',
                                   borderTop:'1px solid #f0f2f8', marginTop:2 }}>
                                   ↑ Used as Current Saved amount
@@ -1599,7 +1616,15 @@ export function FinancialPlanTab() {
                             style={{ width:'100%', boxSizing:'border-box', background: isLinked ? 'rgba(5,150,105,0.05)' : undefined,
                               color: isLinked ? '#059669' : undefined, cursor: isLinked ? 'not-allowed' : undefined }} />
                           {isLinked && <div style={{ fontSize:10, color:'#059669', marginTop:3 }}>
-                            Auto-updated from: {mapped.map(a=>a.name).join(', ')}
+                            Auto-updated from: {(() => {
+                              const directStocks = mapped.filter(a => a.category === 'Stocks & Equities')
+                              const otherAssets  = mapped.filter(a => a.category !== 'Stocks & Equities')
+                              const items = [
+                                ...(directStocks.length > 0 ? [`Direct Stocks (${directStocks.length})`] : []),
+                                ...otherAssets.map(a => a.name)
+                              ]
+                              return items.join(', ')
+                            })()}
                           </div>}
                         </div>
                         <div>
@@ -1941,12 +1966,28 @@ export function FinancialPlanTab() {
                 {mapped.length > 0 ? (
                   <>
                     <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:10 }}>
-                      {mapped.map(a => (
-                        <div key={a.id} style={{ background:'rgba(5,150,105,0.07)', border:'1px solid rgba(5,150,105,0.2)', borderRadius:8, padding:'5px 10px', fontSize:11 }}>
-                          <span style={{ fontWeight:600, color:'#1a1d2e' }}>{a.name}</span>
-                          <span style={{ color:'#059669', marginLeft:6 }}>₹{(a.value||0).toLocaleString('en-IN')}</span>
-                        </div>
-                      ))}
+                      {(() => {
+                        // Group: direct stocks as one summary pill, everything else individually
+                        const directStocks = mapped.filter(a => a.category === 'Stocks & Equities')
+                        const otherAssets  = mapped.filter(a => a.category !== 'Stocks & Equities')
+                        const stockTotal   = directStocks.reduce((s,a) => s+(a.value||0), 0)
+                        const items = [
+                          // Direct stocks: one summary pill
+                          ...(directStocks.length > 0 ? [{
+                            id: '__stocks__', isSummary: true,
+                            name: `Direct Stocks (${directStocks.length})`,
+                            value: stockTotal,
+                          }] : []),
+                          // All other assets: individual pills
+                          ...otherAssets,
+                        ]
+                        return items.map(a => (
+                          <div key={a.id} style={{ background: a.isSummary ? 'rgba(91,143,249,0.08)' : 'rgba(5,150,105,0.07)', border: a.isSummary ? '1px solid rgba(91,143,249,0.2)' : '1px solid rgba(5,150,105,0.2)', borderRadius:8, padding:'5px 10px', fontSize:11 }}>
+                            <span style={{ fontWeight:600, color: a.isSummary ? '#5b8ff9' : '#1a1d2e' }}>{a.name}</span>
+                            <span style={{ color: a.isSummary ? '#5b8ff9' : '#059669', marginLeft:6 }}>₹{(a.value||0).toLocaleString('en-IN')}</span>
+                          </div>
+                        ))
+                      })()}
                     </div>
                     <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, padding:'8px 12px', background:'rgba(5,150,105,0.05)', borderRadius:8 }}>
                       <span style={{ color:'#6b7494' }}>Linked assets value</span>
