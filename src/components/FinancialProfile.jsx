@@ -1156,7 +1156,7 @@ export function FinancialPlanTab() {
     const targetYear   = e.targetYear   ?? pg.targetYear    ?? ai.targetYear  ?? ''
     // Linked assets value — sum of all assets mapped to this goal
     const mappedAssets = (goalMap[goalName] || []).map(id => (data?.assets||[]).find(a => a.id === id)).filter(Boolean)
-    const linkedValue  = mappedAssets.reduce((s, a) => s + (a.value||0), 0)
+    const linkedValue  = Math.round(mappedAssets.reduce((s, a) => s + (a.value||0), 0))
     // Fix 1: If assets are linked, their total value IS the currentSaved (overrides manual entry)
     const currentSaved = linkedValue > 0
       ? linkedValue
@@ -1378,7 +1378,7 @@ export function FinancialPlanTab() {
           {goalPlans.map((g, i) => {
             const isEditing = editingGoal === i
             const mapped = (goalMap[g.goalName] || []).map(id => assets.find(a => a.id === id)).filter(Boolean)
-            const mappedValue = mapped.reduce((s,a) => s+(a.value||0), 0)
+            const mappedValue = Math.round(mapped.reduce((s,a) => s+(a.value||0), 0))
             const isLinked = mapped.length > 0
             // g.currentSaved already equals mappedValue (from goalPlans derivation) when assets linked
             const pctColor = g.pct >= 100 ? '#16a34a' : g.pct >= 60 ? '#c8920a' : g.pct >= 30 ? '#f09b46' : '#dc2626'
@@ -1619,11 +1619,10 @@ export function FinancialPlanTab() {
                             Auto-updated from: {(() => {
                               const directStocks = mapped.filter(a => a.category === 'Stocks & Equities')
                               const otherAssets  = mapped.filter(a => a.category !== 'Stocks & Equities')
-                              const items = [
-                                ...(directStocks.length > 0 ? [`Direct Stocks (${directStocks.length})`] : []),
-                                ...otherAssets.map(a => a.name)
-                              ]
-                              return items.join(', ')
+                              const parts = []
+                              if (directStocks.length > 0) parts.push(`Direct Stocks (${directStocks.length})`)
+                              parts.push(...otherAssets.map(a => a.name))
+                              return parts.join(', ')
                             })()}
                           </div>}
                         </div>
@@ -1945,7 +1944,7 @@ export function FinancialPlanTab() {
 
           {goalPlans.map((g, i) => {
             const mapped     = (goalMap[g.goalName] || []).map(id => assets.find(a=>a.id===id)).filter(Boolean)
-            const mappedVal  = mapped.reduce((s,a) => s+(a.value||0), 0)
+            const mappedVal  = Math.round(mapped.reduce((s,a) => s+(a.value||0), 0))
             const suggestions= autoSuggestMapping(g.goalName, g).map(id => assets.find(a=>a.id===id)).filter(Boolean)
 
             return (
@@ -1965,52 +1964,36 @@ export function FinancialPlanTab() {
 
                 {mapped.length > 0 ? (
                   <>
-                    <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:10 }}>
-                      {(() => {
-                        // Group: direct stocks as one summary pill, everything else individually
-                        const directStocks = mapped.filter(a => a.category === 'Stocks & Equities')
-                        const otherAssets  = mapped.filter(a => a.category !== 'Stocks & Equities')
-                        const stockTotal   = directStocks.reduce((s,a) => s+(a.value||0), 0)
-                        const items = [
-                          // Direct stocks: one summary pill
-                          ...(directStocks.length > 0 ? [{
-                            id: '__stocks__', isSummary: true,
-                            name: `Direct Stocks (${directStocks.length})`,
-                            value: stockTotal,
-                          }] : []),
-                          // All other assets: individual pills
-                          ...otherAssets,
-                        ]
-                        return items.map(a => (
-                          <div key={a.id} style={{ background: a.isSummary ? 'rgba(91,143,249,0.08)' : 'rgba(5,150,105,0.07)', border: a.isSummary ? '1px solid rgba(91,143,249,0.2)' : '1px solid rgba(5,150,105,0.2)', borderRadius:8, padding:'5px 10px', fontSize:11 }}>
-                            <span style={{ fontWeight:600, color: a.isSummary ? '#5b8ff9' : '#1a1d2e' }}>{a.name}</span>
-                            <span style={{ color: a.isSummary ? '#5b8ff9' : '#059669', marginLeft:6 }}>₹{(a.value||0).toLocaleString('en-IN')}</span>
-                          </div>
-                        ))
-                      })()}
-                    </div>
+                    {/* Show as grouped: direct stocks summary + individual others */}
+                    {(() => {
+                      const directStocks = mapped.filter(a => a.category === 'Stocks & Equities')
+                      const others       = mapped.filter(a => a.category !== 'Stocks & Equities')
+                      const stockTotal   = Math.round(directStocks.reduce((s,a) => s+(a.value||0), 0))
+                      return (
+                        <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:10 }}>
+                          {directStocks.length > 0 && (
+                            <div style={{ background:'rgba(91,143,249,0.07)', border:'1px solid rgba(91,143,249,0.2)', borderRadius:8, padding:'5px 10px', fontSize:11 }}>
+                              <span style={{ fontWeight:600, color:'#5b8ff9' }}>Direct Stocks ({directStocks.length})</span>
+                              <span style={{ color:'#5b8ff9', marginLeft:6 }}>₹{stockTotal.toLocaleString('en-IN')}</span>
+                            </div>
+                          )}
+                          {others.map(a => (
+                            <div key={a.id} style={{ background:'rgba(5,150,105,0.07)', border:'1px solid rgba(5,150,105,0.2)', borderRadius:8, padding:'5px 10px', fontSize:11 }}>
+                              <span style={{ fontWeight:600, color:'#1a1d2e' }}>{a.name}</span>
+                              <span style={{ color:'#059669', marginLeft:6 }}>₹{Math.round(a.value||0).toLocaleString('en-IN')}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    })()}
                     <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, padding:'8px 12px', background:'rgba(5,150,105,0.05)', borderRadius:8 }}>
                       <span style={{ color:'#6b7494' }}>Linked assets value</span>
                       <span style={{ fontWeight:700, color:'#059669' }}>₹{mappedVal.toLocaleString('en-IN')} / ₹{g.targetAmount.toLocaleString('en-IN')} ({Math.min(100,Math.round(mappedVal/Math.max(1,g.targetAmount)*100))}%)</span>
                     </div>
                   </>
                 ) : (
-                  <div style={{ display:'grid', gap:6 }}>
-                    <div style={{ fontSize:12, color:'#8892b0', marginBottom:4 }}>
-                      {suggestions.length > 0 ? '✨ Suggested assets to map:' : 'No assets matched automatically — map manually'}
-                    </div>
-                    {suggestions.slice(0,3).map(a => (
-                      <div key={a.id} style={{ display:'flex', justifyContent:'space-between', padding:'8px 12px', background:'rgba(91,143,249,0.05)', border:'1px solid rgba(91,143,249,0.15)', borderRadius:8, fontSize:12 }}>
-                        <span><strong style={{color:'#1a1d2e'}}>{a.name}</strong> <span style={{color:'#8892b0'}}>{a.category}</span></span>
-                        <span style={{color:'#5b8ff9', fontWeight:600}}>₹{(a.value||0).toLocaleString('en-IN')}</span>
-                      </div>
-                    ))}
-                    {suggestions.length > 0 && (
-                      <button className="btn btn-outline btn-sm" style={{ marginTop:4, fontSize:11, borderColor:'#5b8ff9', color:'#5b8ff9' }}
-                        onClick={() => saveGoalMap(g.goalName, suggestions.map(a=>a.id))}>
-                        ✨ Apply Suggestions
-                      </button>
-                    )}
+                  <div style={{ fontSize:12, color:'#8892b0' }}>
+                    No assets mapped — click <strong>+ Map Assets</strong> to link investments to this goal
                   </div>
                 )}
               </div>

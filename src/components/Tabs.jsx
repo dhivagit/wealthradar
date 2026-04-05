@@ -29,8 +29,32 @@ export function Dashboard() {
   const fmt  = v => formatCompact(v, cur)
 
   const assetGroups = groupBy(data.assets, 'category')
-  const assetPie    = Object.entries(assetGroups)
-    .map(([k, v]) => ({ name: k, value: v.reduce((s, x) => s + x.value, 0), color: CAT_COLORS[k] || PALETTE[Object.keys(assetGroups).indexOf(k) % PALETTE.length] }))
+  // Dashboard allocation: group by macro class (same as Allocation tab)
+  const DASH_GROUP_MAP = {
+    'Stocks & Equities':       { label:'Direct Equity',        color:'#5b8ff9' },
+    'Mutual Funds':            { label:'Mutual Funds',          color:'#9b8ff9' },
+    'NPS':                     { label:'Equity Hybrid (NPS)',   color:'#06b6d4' },
+    'Gold & Precious Metals':  { label:'Gold & Silver',         color:'#c8953a' },
+    'Cryptocurrency':          { label:'Cryptocurrency',        color:'#f43f5e' },
+    'Fixed Deposits':          { label:'Fixed Instruments',     color:'#34d399' },
+    'Bonds & Debentures':      { label:'Fixed Instruments',     color:'#34d399' },
+    'PPF / EPF':               { label:'Fixed Instruments',     color:'#34d399' },
+    'SSA (Sukanya Samriddhi)': { label:'Fixed Instruments',     color:'#34d399' },
+    'Cash & Equivalents':      { label:'Cash',                  color:'#56d8c8' },
+    'Real Estate':             { label:'Real Estate',           color:'#f09b46' },
+    'Business Assets':         { label:'Business Assets',       color:'#8892b0' },
+    'Others':                  { label:'Others',                color:'#b0b8d0' },
+  }
+  const dashGroups = {}
+  ;(data?.assets||[]).forEach(a => {
+    const m = DASH_GROUP_MAP[a.category]
+    if (!m || !a.value) return
+    const key = m.label
+    if (!dashGroups[key]) dashGroups[key] = { value:0, color:m.color }
+    dashGroups[key].value += a.value
+  })
+  const assetPie = Object.entries(dashGroups)
+    .map(([name, d]) => ({ name, value: d.value, color: d.color }))
     .filter(s => s.value > 0)
     .sort((a, b) => b.value - a.value)
 
@@ -907,19 +931,83 @@ export function Analytics() {
         })()}
 
         <div className="card" style={{ padding: 24 }}>
-          <h3 className="section-heading" style={{ marginBottom: 16 }}>Top Asset Holdings</h3>
-          {[...( data?.assets || [])].sort((a, b) => b.value - a.value).slice(0, 8).map((a, i) => (
-            <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
-              <span style={{ fontSize: 11, fontFamily: "'JetBrains Mono',monospace", color: '#b0b8d0', width: 22 }}>#{i + 1}</span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span style={{ fontSize: 12, color: '#4a4f6a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>{a.name}</span>
-                  <span style={{ fontSize: 12, fontFamily: "'JetBrains Mono',monospace", color: '#b8820e', flexShrink: 0, marginLeft: 8 }}>{fmts(a.value)}</span>
+          <h3 className="section-heading" style={{ marginBottom: 4 }}>Asset Category Breakdown</h3>
+          <p style={{ fontSize: 12, color: '#8892b0', marginBottom: 16 }}>
+            Portfolio grouped by asset class — NPS treated as Equity Hybrid, PPF/EPF/SSA as Fixed Instruments
+          </p>
+          {(() => {
+            // Map each WealthRadar category → display group
+            const GROUP_MAP = {
+              'Stocks & Equities':       'Direct Equity',
+              'Mutual Funds':            'Mutual Funds',
+              'Gold & Precious Metals':  'Gold & Silver',
+              'Cryptocurrency':          'Cryptocurrency',
+              'Fixed Deposits':          'Fixed Instruments',
+              'Bonds & Debentures':      'Fixed Instruments',
+              'PPF / EPF':               'Fixed Instruments',   // No volatility/risk
+              'SSA (Sukanya Samriddhi)': 'Fixed Instruments',   // No volatility/risk
+              'NPS':                     'Equity Hybrid (NPS)', // Fund manager controlled allocation
+              'Cash & Equivalents':      'Cash',
+              'Real Estate':             'Real Estate',
+              'Vehicles':                null,
+              'Business Assets':         'Business Assets',
+              'Others':                  'Others',
+            }
+            const GROUP_COLORS = {
+              'Direct Equity':        '#5b8ff9',
+              'Mutual Funds':         '#9b8ff9',
+              'Equity Hybrid (NPS)':  '#06b6d4',
+              'Fixed Instruments':    '#34d399',
+              'Gold & Silver':        '#c8953a',
+              'Cash':                 '#56d8c8',
+              'Real Estate':          '#f09b46',
+              'Cryptocurrency':       '#f43f5e',
+              'Business Assets':      '#8892b0',
+              'Others':               '#b0b8d0',
+            }
+            const groups = {}
+            ;(data?.assets || []).forEach(a => {
+              const grp = GROUP_MAP[a.category]
+              if (!grp) return
+              if (!groups[grp]) groups[grp] = { value:0, count:0, categories: new Set() }
+              groups[grp].value += (a.value||0)
+              groups[grp].count += 1
+              groups[grp].categories.add(a.category)
+            })
+            const total = Object.values(groups).reduce((s,g) => s+g.value, 0)
+            const sorted = Object.entries(groups).sort((a,b) => b[1].value - a[1].value)
+            return sorted.map(([grp, g], i) => {
+              const pct = total > 0 ? (g.value/total*100) : 0
+              const col = GROUP_COLORS[grp] || PALETTE[i % PALETTE.length]
+              return (
+                <div key={grp} style={{ display:'flex', alignItems:'center', gap:12, marginBottom:14 }}>
+                  <div style={{ width:28, height:28, borderRadius:6, background:col+'22',
+                    display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <div style={{ width:10, height:10, borderRadius:3, background:col }} />
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}>
+                      <div>
+                        <span style={{ fontSize:13, fontWeight:600, color:'#1a1d2e' }}>{grp}</span>
+                        <span style={{ fontSize:11, color:'#8892b0', marginLeft:6 }}>
+                          ({g.count} holding{g.count>1?'s':''})
+                        </span>
+                      </div>
+                      <div style={{ textAlign:'right', flexShrink:0, marginLeft:8 }}>
+                        <span style={{ fontSize:13, fontFamily:"'JetBrains Mono',monospace", fontWeight:700, color:'#b8820e' }}>
+                          {fmts(g.value)}
+                        </span>
+                        <span style={{ fontSize:11, color:'#8892b0', marginLeft:6 }}>
+                          {pct.toFixed(1)}%
+                        </span>
+                      </div>
+                    </div>
+                    <ProgressBar pct={pct} color={col} height={4} />
+                  </div>
                 </div>
-                <ProgressBar pct={totalAssets > 0 ? (a.value / totalAssets) * 100 : 0} color={PALETTE[i]} height={3} />
-              </div>
-            </div>
-          ))}
+              )
+            })
+          })()}
         </div>
 
         <div className="card" style={{ padding: 24 }}>
