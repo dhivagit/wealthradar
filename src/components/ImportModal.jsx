@@ -447,7 +447,7 @@ export default function ImportModal({ onClose, onImported }) {
     const mfCategory = (instrType) => {
       const t = (instrType||'').toLowerCase()
       if (t.includes('gold') || t.includes('silver') || t.includes('commodity')) return 'Gold & Precious Metals'
-      if (t.includes('debt') || t.includes('liquid') || t.includes('money market')) return 'Fixed Income & Bonds'
+      if (t.includes('debt') || t.includes('liquid') || t.includes('money market')) return 'Mutual Funds'
       if (t.includes('hybrid')) return 'Mutual Funds'
       if (t.includes('equity') || t.includes('elss')) return 'Mutual Funds'
       if (t.includes('fund of fund') || t.includes('fof')) return 'Mutual Funds'

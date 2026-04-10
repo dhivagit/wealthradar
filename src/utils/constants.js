@@ -53,7 +53,6 @@ export const CAT_COLORS = {
   'PPF / EPF':             '#88d060',
   'SSA (Sukanya Samriddhi)':'#ec4899',
   'NPS':                   '#06b6d4',
-  'Fixed Income & Bonds':  '#10b981',
   'Bonds & Debentures':    '#10b981',
   'Cryptocurrency':        '#f43f5e',
   'Business Assets':       '#d97706',

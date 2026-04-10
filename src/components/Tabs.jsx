@@ -15,6 +15,7 @@ import { PALETTE, CAT_COLORS, MILESTONES } from '../utils/constants'
 import { groupBy, formatCurrency, formatCompact } from '../utils/helpers'
 import { useAuth } from '../context/AuthContext'
 import { CURRENCIES } from '../utils/constants'
+import { ALL_CLASSES, CLASS_COLORS, ASSET_CLASS_MAP, mfClass, getAssetClass } from '../utils/assetClasses'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DASHBOARD
@@ -29,29 +30,18 @@ export function Dashboard() {
   const fmt  = v => formatCompact(v, cur)
 
   const assetGroups = groupBy(data.assets, 'category')
-  // Dashboard allocation: group by macro class (same as Allocation tab)
-  const DASH_GROUP_MAP = {
-    'Stocks & Equities':       { label:'Direct Equity',        color:'#5b8ff9' },
-    'Mutual Funds':            { label:'Mutual Funds',          color:'#9b8ff9' },
-    'NPS':                     { label:'Equity Hybrid (NPS)',   color:'#06b6d4' },
-    'Gold & Precious Metals':  { label:'Gold & Silver',         color:'#c8953a' },
-    'Cryptocurrency':          { label:'Cryptocurrency',        color:'#f43f5e' },
-    'Fixed Deposits':          { label:'Fixed Instruments',     color:'#34d399' },
-    'Bonds & Debentures':      { label:'Fixed Instruments',     color:'#34d399' },
-    'PPF / EPF':               { label:'Fixed Instruments',     color:'#34d399' },
-    'SSA (Sukanya Samriddhi)': { label:'Fixed Instruments',     color:'#34d399' },
-    'Cash & Equivalents':      { label:'Cash',                  color:'#56d8c8' },
-    'Real Estate':             { label:'Real Estate',           color:'#f09b46' },
-    'Business Assets':         { label:'Business Assets',       color:'#8892b0' },
-    'Others':                  { label:'Others',                color:'#b0b8d0' },
-  }
+  // Dashboard allocation: group by 5 macro classes (+ Crypto shown separately)
   const dashGroups = {}
   ;(data?.assets||[]).forEach(a => {
-    const m = DASH_GROUP_MAP[a.category]
-    if (!m || !a.value) return
-    const key = m.label
-    if (!dashGroups[key]) dashGroups[key] = { value:0, color:m.color }
-    dashGroups[key].value += a.value
+    if (!a.value) return
+    let cls = getAssetClass(a)
+    // Crypto gets its own visual group but is excluded from the 5-class allocation
+    if (a.category === 'Cryptocurrency') {
+      cls = 'Cryptocurrency'
+    }
+    if (!cls) return  // excluded (Vehicles, Business Assets, Others)
+    if (!dashGroups[cls]) dashGroups[cls] = { value:0, color: cls === 'Cryptocurrency' ? '#f43f5e' : CLASS_COLORS[cls] }
+    dashGroups[cls].value += a.value
   })
   const assetPie = Object.entries(dashGroups)
     .map(([name, d]) => ({ name, value: d.value, color: d.color }))
@@ -937,44 +927,26 @@ export function Analytics() {
           </p>
           {(() => {
             // Map each WealthRadar category → display group
-            const GROUP_MAP = {
-              'Stocks & Equities':       'Direct Equity',
-              'Mutual Funds':            'Mutual Funds',
-              'Gold & Precious Metals':  'Gold & Silver',
-              'Cryptocurrency':          'Cryptocurrency',
-              'Fixed Deposits':          'Fixed Instruments',
-              'Bonds & Debentures':      'Fixed Instruments',
-              'PPF / EPF':               'Fixed Instruments',   // No volatility/risk
-              'SSA (Sukanya Samriddhi)': 'Fixed Instruments',   // No volatility/risk
-              'NPS':                     'Equity Hybrid (NPS)', // Fund manager controlled allocation
-              'Cash & Equivalents':      'Cash',
-              'Real Estate':             'Real Estate',
-              'Vehicles':                null,
-              'Business Assets':         'Business Assets',
-              'Others':                  'Others',
-            }
-            const GROUP_COLORS = {
-              'Direct Equity':        '#5b8ff9',
-              'Mutual Funds':         '#9b8ff9',
-              'Equity Hybrid (NPS)':  '#06b6d4',
-              'Fixed Instruments':    '#34d399',
-              'Gold & Silver':        '#c8953a',
-              'Cash':                 '#56d8c8',
-              'Real Estate':          '#f09b46',
-              'Cryptocurrency':       '#f43f5e',
-              'Business Assets':      '#8892b0',
-              'Others':               '#b0b8d0',
-            }
+            // Use unified 5-class system (same as Allocation tab and Dashboard)
             const groups = {}
             ;(data?.assets || []).forEach(a => {
-              const grp = GROUP_MAP[a.category]
-              if (!grp) return
-              if (!groups[grp]) groups[grp] = { value:0, count:0, categories: new Set() }
-              groups[grp].value += (a.value||0)
-              groups[grp].count += 1
-              groups[grp].categories.add(a.category)
+              if (!a.value) return
+              let cls = getAssetClass(a)
+              // Crypto is shown separately (excluded from 5 main classes but still visible)
+              if (a.category === 'Cryptocurrency') {
+                cls = 'Cryptocurrency'
+              }
+              if (!cls) return  // excluded (Vehicles, Business Assets, Others)
+              if (!groups[cls]) groups[cls] = { value:0, count:0, categories: new Set() }
+              groups[cls].value += (a.value||0)
+              groups[cls].count += 1
+              groups[cls].categories.add(a.category)
             })
             const total = Object.values(groups).reduce((s,g) => s+g.value, 0)
+            const GROUP_COLORS = {
+              ...CLASS_COLORS,
+              'Cryptocurrency': '#f43f5e',
+            }
             const sorted = Object.entries(groups).sort((a,b) => b[1].value - a[1].value)
             return sorted.map(([grp, g], i) => {
               const pct = total > 0 ? (g.value/total*100) : 0
@@ -2690,30 +2662,8 @@ export function Settings({ onToast }) {
 // Shows: current allocation by asset class, age-based target, rebalance recs
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Map each WealthRadar category → macro asset class
-const CLASS_MAP = {
-  'Stocks & Equities':       'Equity',
-  'Mutual Funds':            'Equity',   // equity MFs; debt MFs need note-based override below
-  'NPS':                     'Equity',   // market-linked
-  'Gold & Precious Metals':  'Gold & Silver',
-  'Cryptocurrency':          'Equity',   // treated as high-risk equity
-  'Fixed Deposits':          'Debt',
-  'PPF / EPF':               'Debt',
-  'SSA (Sukanya Samriddhi)': 'Debt',
-  'Bonds & Debentures':      'Debt',
-  'Cash & Equivalents':      'Cash',
-  'Real Estate':             'Real Estate',
-  'Vehicles':                null,        // excluded
-  'Business Assets':         null,
-  'Others':                  null,
-}
-// MF sub-classification by note/sector keyword
-const mfClass = (note='') => {
-  const n = note.toLowerCase()
-  if (/debt|bond|gilt|liquid|overnight|money market|banking psu|floater|credit risk|short dur|long dur/.test(n)) return 'Debt'
-  if (/gold|silver/.test(n)) return 'Gold & Silver'
-  return 'Equity' // default: equity MF
-}
+// Shared asset classification — imported from assetClasses.js
+// ASSET_CLASS_MAP, mfClass, ALL_CLASSES, CLASS_COLORS, getAssetClass all imported at top
 
 // Age-based target allocation (standard Indian financial planning guidelines)
 const getTargetAllocation = (age) => {
@@ -2729,13 +2679,7 @@ const getTargetAllocation = (age) => {
   return        { Equity:30, Debt:42, 'Gold & Silver':8, Cash:10,'Real Estate':10 }
 }
 
-const CLASS_COLORS = {
-  Equity:        '#5b8ff9',
-  Debt:          '#34d399',
-  'Gold & Silver':'#c8953a',
-  Cash:          '#56d8c8',
-  'Real Estate': '#f09b46',
-}
+// Colors imported from assetClasses.js; add icons
 const CLASS_ICONS = {
   Equity: '📈', Debt: '🏦', 'Gold & Silver': '🥇', Cash: '💵', 'Real Estate': '🏠',
 }
@@ -2743,7 +2687,6 @@ const CLASS_ICONS = {
 export function AssetAllocation() {
   const { data, settings } = useFinance()
   const { session } = useAuth()
-  const ALL_CLASSES = ['Equity','Debt','Gold & Silver','Cash','Real Estate']
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [showRebalance, setShowRebalance] = useState(false)
@@ -2790,9 +2733,7 @@ export function AssetAllocation() {
 
   assets.forEach(a => {
     if (!a.value) return
-    let cl = CLASS_MAP[a.category]
-    if (cl === undefined) return
-    if (a.category === 'Mutual Funds') cl = mfClass(a.note || a._sector || '')
+    const cl = getAssetClass(a)
     if (!cl) return
     classTotals[cl] = (classTotals[cl]||0) + (a.value||0)
     classAssets[cl].push(a)

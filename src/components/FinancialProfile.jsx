@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useFinance } from '../context/FinanceContext'
 import { DB } from '../utils/helpers'
+import { getAssetClass } from '../utils/assetClasses'
 
 // ─── Persist profile separately from main data ────────────────────────────────
 export const ProfileDB = {
@@ -1205,29 +1206,35 @@ export function FinancialPlanTab() {
     const n = goalName.toLowerCase()
     const suggestions = []
     assets.forEach(a => {
+      const cls = getAssetClass(a)
       const cat = (a.category||'').toLowerCase()
       const name = (a.name||'').toLowerCase()
       let match = false
-      const isStock = a.category === 'Stocks & Equities'
+
       if (/retire|pension|corpus/.test(n)) {
-        // Retirement: PPF, EPF, NPS, MF, AND all direct equity stocks
-        match = /ppf|epf|nps|retirement/.test(cat+name) || isStock || /mutual/.test(cat)
+        // Retirement: all equity + debt + gold assets (market-linked or long-term debt)
+        match = cls === 'Equity' || cls === 'Debt' || cls === 'Gold & Silver'
       } else if (/child|educat|school|college/.test(n)) {
-        // Child goals: MF, ELSS, SSA — exclude direct stocks
-        match = !isStock && /mutual|elss|sukanya|ssa/.test(cat+name)
+        // Child goals: mutual funds (both equity and debt), but not direct stocks or cash
+        match = (a._isMF || a.category === 'Mutual Funds') && cls !== null
       } else if (/home|house|flat|property/.test(n)) {
-        match = !isStock && /fd|fixed deposit|bond|mutual/.test(cat)
+        // Home: debt instruments + FDs (safe, capital-guaranteed)
+        match = cls === 'Debt' || cls === 'Cash'
       } else if (/emergency/.test(n)) {
-        match = !isStock && /cash|fd|liquid/.test(cat)
+        // Emergency: liquid assets only (cash, liquid funds)
+        match = cls === 'Cash' || /liquid|overnight/.test(name)
       } else if (/gold|wedding|jewel/.test(n)) {
-        match = /gold/.test(cat)
+        // Gold goals: gold & silver assets only
+        match = cls === 'Gold & Silver'
       } else if (/tax/.test(n)) {
-        match = !isStock && /elss|ppf|nps/.test(name+cat)
+        // Tax: ELSS (equity) and PPF (debt) — tax-advantaged products
+        match = /elss|ppf|nps/.test(name+cat)
       } else if (/car|vehicle/.test(n)) {
-        match = !isStock && /fd|fixed deposit|liquid|cash/.test(cat)
+        // Vehicle: cash and liquid debt (short-term, capital-safe)
+        match = cls === 'Cash' || (cls === 'Debt' && /liquid|fixed deposit/.test(cat))
       } else {
-        // generic short-term: MF only, no direct stocks
-        match = !isStock && /mutual/.test(cat)
+        // Generic short-term: mutual funds only
+        match = a._isMF || a.category === 'Mutual Funds'
       }
       if (match) suggestions.push(a.id)
     })
