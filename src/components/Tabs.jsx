@@ -16,6 +16,7 @@ import { groupBy, formatCurrency, formatCompact } from '../utils/helpers'
 import { useAuth } from '../context/AuthContext'
 import { CURRENCIES } from '../utils/constants'
 import { ALL_CLASSES, CLASS_COLORS, ASSET_CLASS_MAP, mfClass, getAssetClass } from '../utils/assetClasses'
+import { detectSubCategory } from '../utils/detection'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DASHBOARD
@@ -300,17 +301,15 @@ export function Assets() {
         </div>
       )}
 
-      {/* Asset groups — ordered: Fixed Instruments → Gold → Mutual Funds → Stocks → Others */}
+      {/* Asset groups — ordered: Fixed → Gold → MF → NPS (equity-linked) → Stocks → Others */}
       {(() => {
         const CAT_ORDER = [
-          // Fixed Instruments first
-          'PPF / EPF', 'SSA (Sukanya Samriddhi)', 'NPS', 'Fixed Deposits',
+          // Fixed-income instruments (NPS excluded — classified as Equity in assetClasses.js)
+          'PPF / EPF', 'SSA (Sukanya Samriddhi)', 'Fixed Deposits',
           'Bonds & Debentures', 'Cash & Equivalents',
-          // Then Gold
           'Gold & Precious Metals',
-          // Then Mutual Funds
           'Mutual Funds',
-          // Then Equities
+          'NPS',
           'Stocks & Equities',
           // Then everything else
           'Real Estate', 'Cryptocurrency', 'Business Assets', 'Vehicles', 'Others',
@@ -326,10 +325,20 @@ export function Assets() {
         const catTotal = items.reduce((s, x) => s + x.value, 0)
         return (
           <div key={cat} className="card" style={{ marginBottom:16, overflow:'hidden' }}>
-            <div style={{ padding:'14px 20px', borderBottom:'1px solid #eef0f8', display:'flex', justifyContent:'space-between', alignItems:'center', background:'#f8f9fc', flexWrap:'wrap', gap:8 }}>
-              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                <span className="tag tag-asset">{cat}</span>
-                <span style={{ fontSize:12, color:'#8892b0' }}>{items.length} holding{items.length !== 1 ? 's' : ''}</span>
+            <div style={{ padding:'14px 20px', borderBottom:'1px solid #eef0f8', display:'flex', justifyContent:'space-between', alignItems:'flex-start', background:'#f8f9fc', flexWrap:'wrap', gap:8 }}>
+              <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                  <span className="tag tag-asset">{cat}</span>
+                  <span style={{ fontSize:12, color:'#8892b0' }}>{items.length} holding{items.length !== 1 ? 's' : ''}</span>
+                </div>
+                {(() => {
+                  const mostRecentDate = Math.max(...items.map(r => r._updatedDate || parseInt(r.id.split('_')[0])))
+                  const dateObj = new Date(mostRecentDate)
+                  const formattedDate = dateObj.toLocaleDateString('en-IN', { year:'numeric', month:'short', day:'numeric' })
+                  return (
+                    <span style={{ fontSize:11, color:'#6b7494', fontStyle:'italic' }}>Updated: {formattedDate}</span>
+                  )
+                })()}
               </div>
               <div style={{ display:'flex', alignItems:'center', gap:14, flexWrap:'wrap' }}>
                 {items.some(r => r._investedValue > 0) && (() => {
@@ -357,19 +366,45 @@ export function Assets() {
             <DataTable currency={cur}
               cols={[
                 { key:'name',  label:'Name' },
-                // Fixed instruments → "Fixed Instrument" badge
-                // Mutual Funds → "Category" (shows MF sub-category like Large Cap, Hybrid etc.)
-                // Equities/others → "Sector"
-                ...((['PPF / EPF','SSA (Sukanya Samriddhi)','Fixed Deposits','Bonds & Debentures','Cash & Equivalents','Real Estate','Vehicles','Business Assets'].includes(cat))
+                // Fixed instruments → "Fixed Instrument" badge (NPS → Equity; matches ASSET_CLASS_MAP)
+                // Mutual Funds → "Category" (MF sub-type); Gold → type; Equities → sector
+                ...(cat === 'NPS'
+                  ? [{ key:'npsClass', label:'Category', render: r => {
+                      const detail = (r._sector || r.note || '').trim()
+                      return (
+                        <div style={{ display:'flex', flexDirection:'column', gap:4, alignItems:'flex-start' }}>
+                          <span style={{ fontSize:11, fontWeight:600, color:'#2563eb',
+                            background:'rgba(37,99,235,0.1)', padding:'2px 10px', borderRadius:20 }}>
+                            Equity
+                          </span>
+                          {detail
+                            ? <span style={{ fontSize:11, color:'#6b7494', maxWidth:200 }} title={detail}>{detail}</span>
+                            : null}
+                        </div>
+                      )
+                    } }]
+                  : (['PPF / EPF','SSA (Sukanya Samriddhi)','Fixed Deposits','Bonds & Debentures','Cash & Equivalents','Real Estate','Vehicles','Business Assets'].includes(cat))
                   ? [{ key:'category', label:'Category', render: () => (
                       <span style={{ fontSize:11, fontWeight:600, color:'#059669',
                         background:'rgba(5,150,105,0.08)', padding:'2px 10px', borderRadius:20 }}>
                         Fixed Instrument
                       </span>
                     )}]
-                  : cat === 'Mutual Funds'
-                  ? [{ key:'note', label:'Category', color:() => '#7c3aed' }]
-                  : [{ key:'note', label:'Sector',   color:() => '#6b7494' }]),
+                  : (cat === 'Mutual Funds' || cat === 'Gold & Precious Metals')
+                  ? [{ key:'subCat', label:'Category', color:() => '#7c3aed',
+                      render: r => {
+                        const v = (r._sector || r.note || '').trim()
+                        return v
+                          ? <span style={{ fontSize:12 }}>{v}</span>
+                          : <span style={{ color:'#d0d4e0' }}>—</span>
+                      } }]
+                  : [{ key:'subCat', label:'Sector', color:() => '#6b7494',
+                      render: r => {
+                        const v = (r._sector || r.note || '').trim()
+                        return v
+                          ? <span style={{ fontSize:12 }}>{v}</span>
+                          : <span style={{ color:'#d0d4e0' }}>—</span>
+                      } }]),
                 { key:'institution', label:'Source',
                   render: r => (
                     <span style={{ color:'#8892b0', fontSize:12 }}>
@@ -426,6 +461,18 @@ export function Assets() {
                       <ProgressBar pct={totalAssets > 0 ? (r.value/totalAssets)*100 : 0} color="#c8953a" height={3} />
                     </div>
                   )},
+                { key:'remarks', label:'Remarks',
+                  render: r => {
+                    const sec = (r._sector || '').trim()
+                    const nt = (r.note || '').trim()
+                    const remarkOnly = sec && nt && nt !== sec ? nt : ''
+                    return (
+                      <span style={{ fontSize:12, color:'#6b7494', maxWidth:'150px', display:'inline-block',
+                        overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={remarkOnly}>
+                        {remarkOnly || '—'}
+                      </span>
+                    )
+                  }},
               ]}
               rows={items}
               onEdit={item => setModal({ collection:'assets', item })}
@@ -510,7 +557,7 @@ export function Liabilities() {
                   : <span style={{ color: '#b0b8d0' }}>—</span> },
               { key: 'value', label: 'Outstanding', right: true, mono: true,
                 render: (r, c) => <span style={{ color: '#dc2626' }}>{formatCurrency(r.value, c)}</span> },
-              { key: 'note', label: 'Note', color: () => '#6b7494' },
+              { key: 'note', label: 'Remarks', color: () => '#6b7494' },
             ]}
             rows={items}
             onEdit={item => setModal({ collection: 'liabilities', item })}
@@ -601,7 +648,7 @@ export function CashFlow() {
               render: (r, c) => <span style={{ fontFamily: "'JetBrains Mono',monospace", color: '#16a34a' }}>{formatCurrency(r.monthly, c)}</span> },
             { key: 'annual', label: 'Annual', right: true,
               render: (r, c) => <span style={{ fontFamily: "'JetBrains Mono',monospace", color: '#8892b0' }}>{formatCurrency(r.monthly * 12, c)}</span> },
-            { key: 'note', label: 'Note', color: () => '#6b7494' },
+            { key: 'note', label: 'Remarks', color: () => '#6b7494' },
           ]}
           rows={data?.income || []}
           onEdit={item => setModal({ collection: 'income', item })}
@@ -629,7 +676,7 @@ export function CashFlow() {
               render: (r, c) => <span style={{ fontFamily: "'JetBrains Mono',monospace", color: '#8892b0' }}>-{formatCurrency(r.monthly * 12, c)}</span> },
             { key: 'pct', label: '% of Income', right: true,
               render: r => <span style={{ fontSize: 11, color: '#8892b0' }}>{totalIncome > 0 ? ((r.monthly / totalIncome) * 100).toFixed(1) : 0}%</span> },
-            { key: 'note', label: 'Note', color: () => '#6b7494' },
+            { key: 'note', label: 'Remarks', color: () => '#6b7494' },
           ]}
           rows={data?.expenses || []}
           onEdit={item => setModal({ collection: 'expenses', item })}
@@ -2212,9 +2259,6 @@ export function Settings({ onToast }) {
 
   const scanCategories = () => {
     if (!data?.assets?.length) { onToast('No assets found', 'info'); return }
-    const ASSET_CATS_ALL = ['Cash & Equivalents','Fixed Deposits','Bonds & Debentures','Mutual Funds',
-      'Stocks & Equities','PPF / EPF','NPS','Real Estate','Gold & Precious Metals',
-      'Cryptocurrency','Vehicles','Business Assets','Others']
     const items = data.assets
       .map(a => {
         const suggested = smartCategoryDetect(a.name)
@@ -2241,54 +2285,17 @@ export function Settings({ onToast }) {
     onToast(`Updated category for ${toFix.length} asset${toFix.length > 1 ? 's' : ''}`, 'success')
   }
 
-  // Fix missing sectors — runs sector detection on all assets that have no sector/note set
+  // Fix missing sectors — runs detection on equity-like assets with no sector/note set
   const fixMissingSectors = () => {
     if (!data?.assets?.length) { onToast('No assets to fix', 'info'); return }
-    const detectSec = (name) => {
-      const n = (name || '').toLowerCase()
-      const rules = [
-        [['bank','banking','indusind','federal bank','yes bank','bandhan','au small','dcb bank','karur','city union','tmb','south indian','hdb financial','rbl bank','csb bank','hdfc bank','icici bank','axis bank','kotak mah','sbi bank'], 'Banking'],
-        [['insurance','life ins','general ins','bajaj allianz','icici pru','hdfc life','sbi life','star health','niva bupa','go digit'], 'Insurance'],
-        [['power finance','pfc','rec limited','lic housing','manappuram','muthoot','sphoorty','bajaj fin','cholaman','shriram','mahindra fin','pnb housing','can fin','aptus','home first','aditya birla cap','iifl','abcapital'], 'Financial Services'],
-        [['finance','financial'], 'Financial Services'],
-        [['tata consultancy','tcs','infosys','wipro','hcl tech','tech mahindra','ltimindtree','mphasis','persistent','coforge','hexaware','zensar','mastek','kpit','happiest','birlasoft','saksoft','tanla','tata elxsi','cyient','sasken','sonata','intellect design','nucleus software','rategain'], 'Software & IT'],
-        [['mahindra','maruti','tata motors','ashok leyland','hero moto','bajaj auto','tvs motor','eicher','bosch','mrf','apollo tyre','ceat','motherson','endurance','sona bl','uno minda','rane','samvardhana'], 'Automobiles'],
-        [['healthcare','ttk health','apollo hosp','fortis','max health','narayana','aster','global health','rainbow','kims','yatharth','metropolis','dr lal','thyrocare','vijaya diag'], 'Healthcare'],
-        [['pharma','cipla','sun pharma','drreddy','dr. reddy','biocon','divis','lupin','zydus','cadila','abbott','pfizer','natco','alkem','torrent pharma','ipca','laurus','granules','glenmark','mankind','ajanta','eris','suven'], 'Pharmaceuticals'],
-        [['oil','petroleum','ongc','bpcl','hpcl','ioc','indian oil','gail','castrol','gujarat gas','indraprastha','mahanagar gas','petronet','aegis logistics'], 'Oil & Gas'],
-        [['coal india','ntpc','adani power','tata power','torrent power','cesc','jsw energy','power grid','sjvn','nhpc','ireda','waaree','premier energies'], 'Energy & Power'],
-        [['steel','tata steel','jsw steel','sail','jspl','jindal','hindalco','vedanta','nalco','moil','nmdc','hindustan zinc'], 'Metals & Mining'],
-        [['hindustan unilever','hul','itc','dabur','godrej consumer','marico','nestle','britannia','colgate','emami','jyothy','varun bev','radico','united spirits','tilaknagar','globus spirits'], 'FMCG'],
-        [['larsen','l&t','siemens','abb','bhel','cummins','thermax','bharat forge','grindwell','timken','schaeffler','skf','elgi','kirloskar','honeywell','voltas','blue star','kec international','kalpataru','ncc'], 'Capital Goods'],
-        [['prakash pipes','supreme industries','astral','finolex','prince pipes','apollo pipes'], 'Industrials'],
-        [['pipes','fittings','valves'], 'Industrials'],
-        [['airtel','jio','vodafone','bharti','tata comm','sterlite tech','hfcl','route mobile'], 'Telecom'],
-        [['dlf','godrej prop','oberoi','prestige','brigade','sobha','macrotech','lodha','kolte patil','phoenix','puravankara'], 'Real Estate'],
-        [['ultratech','shree cement','acc','ambuja','dalmia','jk cement','ramco','birla corp','heidelberg'], 'Cement'],
-        [['pidilite','asian paint','berger','kansai','nerolac','deepak nitrite','aarti ind','navin fluorine','srf','clean science','galaxy surf','fine organics','vinati organics'], 'Chemicals'],
-        [['avenue supermarts','dmart','trent','v-mart','metro brands','bata','relaxo','titan','kalyan','vedant','manyavar'], 'Retail & Consumer'],
-        [['adani port','concor','blue dart','gati','allcargo','delhivery','mahindra logistics'], 'Logistics'],
-        [['nse','bse','cdsl','nsdl','cams','computer age','kfin tech','crisil','care ratings','icra','angel one','motilal','iifl sec','5paisa','geojit'], 'Capital Markets'],
-        [['textile','fabric','yarn','raymond','arvind','vardhman','welspun','trident'], 'Textiles'],
-        [['fertiliser','fertilizer','agri','coromandel','chambal','deepak fert','pi industries','dhanuka','rallis'], 'Agriculture'],
-        [['media','entertainment','zee','sony','network18','sun tv','pvr','inox','saregama'], 'Media & Entertainment'],
-        [['defence','defense','aerospace','hal','bharat electronics','bharat dynamics','mazagon','cochin shipyard','garden reach'], 'Defence'],
-      ]
-      for (const [keywords, sector] of rules) {
-        if (keywords.some(k => n.includes(k))) return sector
-      }
-      return ''
-    }
-
     const EQUITY_CATS = new Set(['Stocks & Equities','Mutual Funds','Gold & Precious Metals','Cryptocurrency'])
     let changed = 0
     const fixed = data.assets.map(a => {
-      // Only process equity assets that are missing sector
       if (!EQUITY_CATS.has(a.category)) return a
-      const existing = (a.note || a._sector || '').trim()
-      if (existing) return a   // already has sector — skip
-      const detected = detectSec(a.name)
-      if (!detected) return a  // couldn't detect — skip
+      const existing = (a._sector || a.note || '').trim()
+      if (existing) return a
+      const detected = detectSubCategory(a.name, a.category)
+      if (!detected) return a
       changed++
       return { ...a, note: detected, _sector: detected }
     })

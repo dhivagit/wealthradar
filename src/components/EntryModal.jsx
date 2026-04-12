@@ -157,17 +157,15 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
     f('name', v)
     if (isEdit) return
     const suggested = smartCategory(v, collection)
-    const sector    = collection === 'assets' ? detectSector(v) : ''
     if (suggested && cats.includes(suggested)) {
       setForm(p => ({
         ...p,
         name:     v,
         category: suggested,
-        note:     sector || p.note,   // auto-fill sector only if detected and not already set
       }))
       setAutoSuggested(true)
     } else {
-      setForm(p => ({ ...p, name: v, note: sector || p.note }))
+      setForm(p => ({ ...p, name: v }))
       setAutoSuggested(false)
     }
   }
@@ -201,8 +199,10 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
         _ltp:           qty > 0 && presVal > 0 ? Math.round(presVal / qty * 100) / 100 : 0,
         _plPct:         plPctFin,
         _isMF:          isMF,
-        _sector:        form.note.trim(),
+        _sector:        detectSector(form.name.trim()),
       }),
+      // Track when asset was last updated
+      ...(collection === 'assets' && { _updatedDate: Date.now() }),
     }
 
     if (isEdit) updateItem(collection, entry)
@@ -328,11 +328,11 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
               </select>
             </Field>
 
-            {/* Sector / Category label */}
-            <Field label={isMF ? 'Fund Category (optional)' : 'Sector (optional)'}
-              hint={isMF ? 'e.g. Large Cap, Mid Cap, ELSS, Hybrid' : 'e.g. Banking, Software & IT, Pharmaceuticals'}>
+            {/* Remarks field */}
+            <Field label="Remarks (optional)"
+              hint={isMF ? 'e.g. Fund category - Large Cap, Mid Cap, ELSS, Hybrid' : form.category === 'Gold & Precious Metals' ? 'e.g. Gold, Silver, Platinum' : 'e.g. Sector - Banking, Software & IT, Pharmaceuticals'}>
               <input className="input" value={form.note} onChange={e => f('note', e.target.value)}
-                placeholder={isMF ? 'e.g. Mid Cap' : 'e.g. Banking'}
+                placeholder={isMF ? 'e.g. Mid Cap Fund' : form.category === 'Gold & Precious Metals' ? 'e.g. Gold Coins' : 'e.g. IT Sector Stock'}
                 onKeyDown={e => e.key === 'Enter' && handleSave()} />
             </Field>
           </>
@@ -350,9 +350,9 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
                 onChange={e => f('institution', e.target.value)}
                 placeholder="e.g. SBI, HDFC, Post Office…" />
             </Field>
-            <Field label="Note (optional)">
+            <Field label="Remarks (optional)">
               <input className="input" value={form.note} onChange={e => f('note', e.target.value)}
-                placeholder="Any relevant notes…"
+                placeholder="Any relevant remarks…"
                 onKeyDown={e => e.key === 'Enter' && handleSave()} />
             </Field>
           </>
@@ -383,9 +383,9 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
                 value={form.rate} onChange={e => f('rate', e.target.value)}
                 placeholder="e.g. 8.5" />
             </Field>
-            <Field label="Note (optional)">
+            <Field label="Remarks (optional)">
               <input className="input" value={form.note} onChange={e => f('note', e.target.value)}
-                placeholder="Any relevant notes…"
+                placeholder="Any relevant remarks…"
                 onKeyDown={e => e.key === 'Enter' && handleSave()} />
             </Field>
           </>
