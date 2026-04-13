@@ -44,6 +44,17 @@ export function groupBy(arr, key) {
 // ─── Generate unique id ───────────────────────────────────────────────────────
 export const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
 
+/** Best-effort created/ordering time from asset id (`${Date.now()}_…` or `manual_${ts}`). */
+export function assetIdToTimestamp(id) {
+  if (id == null || id === '') return null
+  const s = String(id)
+  const manual = s.match(/^manual_(\d+)$/)
+  if (manual) return Number(manual[1])
+  const head = s.split('_')[0]
+  const t = parseInt(head, 10)
+  return Number.isFinite(t) ? t : null
+}
+
 // ─── Simple password hash (for local auth) ────────────────────────────────────
 export function hashPassword(pw) {
   let h = 0

@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Modal, Field } from './UI'
 import { ASSET_CATS, LIABILITY_CATS, INCOME_CATS, EXPENSE_CATS } from '../utils/constants'
 import { CURRENCIES } from '../utils/constants'
-import { uid } from '../utils/helpers'
+import { uid, assetIdToTimestamp } from '../utils/helpers'
 import { useFinance } from '../context/FinanceContext'
+import { useAuth } from '../context/AuthContext'
 
 const CATS = {
   assets:      ASSET_CATS,
@@ -109,11 +110,34 @@ const BROKERS = ['Zerodha','Groww','ICICI Direct','INDMoney','Aionion Capital','
 
 export default function EntryModal({ collection, item, onClose, onSaved }) {
   const { addItem, updateItem, settings } = useFinance()
+  const { session } = useAuth()
   const isEdit     = Boolean(item?.id)
   const cats       = CATS[collection]
   const isCF       = collection === 'income' || collection === 'expenses'
   const isLiab     = collection === 'liabilities'
   const currSymbol = CURRENCIES.find(c => c.code === settings.currency)?.symbol || '₹'
+  const isAsset    = collection === 'assets'
+
+  // ── Goals mapping (stored in wr_profile_<userId> as _goalMap) ───────────────
+  const { goalOptions, initialGoalName } = useMemo(() => {
+    if (!isAsset || !session?.userId) return { goalOptions: [], initialGoalName: '' }
+    try {
+      const p = JSON.parse(localStorage.getItem(`wr_profile_${session.userId}`) || '{}')
+      const goals = Array.isArray(p?.goals) ? p.goals : []
+      const opts = goals.map(g => (g?.label || '')).filter(Boolean)
+      const goalMap = p?._goalMap || {}
+      const assetId = item?.id
+      let initial = ''
+      if (assetId && goalMap && typeof goalMap === 'object') {
+        for (const [goalName, ids] of Object.entries(goalMap)) {
+          if (Array.isArray(ids) && ids.includes(assetId)) { initial = goalName; break }
+        }
+      }
+      return { goalOptions: opts, initialGoalName: initial }
+    } catch {
+      return { goalOptions: [], initialGoalName: '' }
+    }
+  }, [isAsset, session?.userId, item?.id])
 
   const [form, setForm] = useState({
     name:          item?.name          || '',
@@ -128,23 +152,31 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
     avgPrice:      item?._avgPrice     || '',
     investedValue: item?._investedValue|| '',
   })
+  const [goalName, setGoalName] = useState(initialGoalName || '')
   const [saving, setSaving]           = useState(false)
   const [autoSuggested, setAutoSuggested] = useState(false)
 
   const f = (k, v) => setForm(p => ({ ...p, [k]: v }))
 
+  // Keep goal selection in sync when switching between rows (edit -> edit)
+  useEffect(() => {
+    setGoalName(initialGoalName || '')
+  }, [initialGoalName])
+
   // Derived: is this an equity-type asset?
   const isEquityCat = EQUITY_CATS.has(form.category)
   const isMF        = form.category === 'Mutual Funds'
+  const isRealEstateCat = !isCF && !isLiab && form.category === 'Real Estate'
 
-  // Auto-calc invested value when qty × avgPrice changes
+  // Auto-calc invested value when qty × avgPrice changes (equity / MF / gold / crypto only)
   useEffect(() => {
+    if (!EQUITY_CATS.has(form.category)) return
     const q = parseFloat(form.qty)
     const a = parseFloat(form.avgPrice)
     if (q > 0 && a > 0) {
       f('investedValue', String(Math.round(q * a * 100) / 100))
     }
-  }, [form.qty, form.avgPrice])
+  }, [form.category, form.qty, form.avgPrice])
 
   // Auto-calc P&L %
   const invested = parseFloat(form.investedValue) || 0
@@ -180,16 +212,22 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
     const invVal   = parseFloat(form.investedValue) || (qty > 0 && avgPrice > 0 ? qty * avgPrice : 0)
     const presVal  = parseFloat(form.value) || 0
     const plPctFin = invVal > 0 && presVal > 0 ? ((presVal - invVal) / invVal * 100) : null
+    const newPresentValue = presVal || invVal
+    const oldPresentValue = Number(item?.value) || 0
+    const presentValueChanged =
+      !isEdit ||
+      Math.round(newPresentValue * 100) !== Math.round(oldPresentValue * 100)
 
+    const entryId = item?.id || uid()
     const entry = {
-      id:          item?.id || uid(),
+      id:          entryId,
       name:        form.name.trim().toUpperCase(),
       category:    form.category,
       institution: form.institution.trim(),
       note:        form.note.trim(),
       ...(isCF
         ? { monthly: parseFloat(form.monthly) || 0 }
-        : { value:   presVal || invVal }),       // fallback to invested if no present value
+        : { value:   newPresentValue }),       // fallback to invested if no present value
       ...(isLiab && form.rate ? { rate: parseFloat(form.rate) } : {}),
       // Equity-specific metadata (only saved for equity/MF categories)
       ...(isEquityCat && {
@@ -201,12 +239,43 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
         _isMF:          isMF,
         _sector:        detectSector(form.name.trim()),
       }),
-      // Track when asset was last updated
-      ...(collection === 'assets' && { _updatedDate: Date.now() }),
+      ...(isRealEstateCat && {
+        _investedValue: invVal,
+        _plPct:         plPctFin,
+      }),
+      // Present-value change timestamp only (remarks / other fields do not bump this)
+      ...(collection === 'assets' && {
+        _updatedDate: presentValueChanged
+          ? Date.now()
+          : (item?._updatedDate ?? assetIdToTimestamp(item?.id) ?? Date.now()),
+      }),
     }
 
     if (isEdit) updateItem(collection, entry)
     else        addItem(collection, entry)
+
+    // Sync goal mapping to My Goals (stored in profile _goalMap)
+    if (isAsset && session?.userId) {
+      try {
+        const key = `wr_profile_${session.userId}`
+        const p = JSON.parse(localStorage.getItem(key) || '{}')
+        const current = (p?._goalMap && typeof p._goalMap === 'object') ? p._goalMap : {}
+        const cleaned = {}
+        // Remove this asset id from every goal first
+        for (const [g, ids] of Object.entries(current)) {
+          if (!Array.isArray(ids)) continue
+          const next = ids.filter(x => x !== entryId)
+          if (next.length > 0) cleaned[g] = next
+        }
+        // Add to selected goal (if any)
+        const selected = (goalName || '').trim()
+        if (selected) {
+          cleaned[selected] = Array.isArray(cleaned[selected]) ? cleaned[selected] : []
+          if (!cleaned[selected].includes(entryId)) cleaned[selected].push(entryId)
+        }
+        localStorage.setItem(key, JSON.stringify({ ...p, _goalMap: cleaned }))
+      } catch {}
+    }
 
     setSaving(false)
     onSaved?.()
@@ -335,11 +404,95 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
                 placeholder={isMF ? 'e.g. Mid Cap Fund' : form.category === 'Gold & Precious Metals' ? 'e.g. Gold Coins' : 'e.g. IT Sector Stock'}
                 onKeyDown={e => e.key === 'Enter' && handleSave()} />
             </Field>
+
+            {/* Goal mapping */}
+            {isAsset && goalOptions.length > 0 && (
+              <Field label="Goal (optional)">
+                <select className="input" value={goalName} onChange={e => setGoalName(e.target.value)}>
+                  <option value="">— Not linked —</option>
+                  {goalOptions.map(g => <option key={g} value={g}>{g}</option>)}
+                </select>
+              </Field>
+            )}
           </>
         )}
 
-        {/* ── Standard fields for non-equity ─────────────────────── */}
-        {!isCF && !isLiab && !isEquityCat && (
+        {/* ── Real Estate: invested (cost) + present value + P&L ─── */}
+        {!isCF && !isLiab && isRealEstateCat && (
+          <>
+            <div style={{ background:'rgba(240,155,70,0.06)', border:'1px solid rgba(240,155,70,0.2)',
+              borderRadius:10, padding:'14px 16px', marginBottom:16 }}>
+              <div style={{ fontSize:11, fontWeight:600, color:'#c2410c', letterSpacing:'0.05em',
+                textTransform:'uppercase', marginBottom:12 }}>
+                🏠 Property valuation
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                <Field label={`Invested / cost basis (${currSymbol})`} hint="Purchase, registration, major improvements…">
+                  <div style={{ position:'relative' }}>
+                    <span style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)',
+                      color:'#8892b0', fontSize:13, pointerEvents:'none' }}>₹</span>
+                    <input className="input" type="number" min="0" step="any"
+                      value={form.investedValue} onChange={e => f('investedValue', e.target.value)}
+                      placeholder="0"
+                      style={{ paddingLeft:22, width:'100%', boxSizing:'border-box' }} />
+                  </div>
+                </Field>
+                <Field label={`Present / market value (${currSymbol})`} hint={plPct !== null ? `P&L: ${plPct >= 0 ? '+' : ''}${plPct.toFixed(2)}% (${plPct >= 0 ? '+' : ''}${currSymbol}${Math.round(Math.abs(plAbs)).toLocaleString('en-IN')})` : 'Current estimated value'}>
+                  <div style={{ position:'relative' }}>
+                    <span style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)',
+                      color:'#8892b0', fontSize:13, pointerEvents:'none' }}>₹</span>
+                    <input className="input" type="number" min="0" step="any"
+                      value={form.value} onChange={e => f('value', e.target.value)}
+                      placeholder="0"
+                      style={{ paddingLeft:22, width:'100%', boxSizing:'border-box',
+                        borderColor: plPct !== null ? (plPct >= 0 ? 'rgba(22,163,74,0.3)' : 'rgba(220,38,38,0.3)') : undefined }} />
+                  </div>
+                </Field>
+              </div>
+              {plPct !== null && (
+                <div style={{ marginTop:10, padding:'8px 12px', borderRadius:8,
+                  background: plPct >= 0 ? 'rgba(22,163,74,0.07)' : 'rgba(220,38,38,0.07)',
+                  border: `1px solid ${plPct >= 0 ? 'rgba(22,163,74,0.2)' : 'rgba(220,38,38,0.2)'}`,
+                  display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                  <span style={{ fontSize:12, color:'#6b7494' }}>Unrealised P&L</span>
+                  <div style={{ display:'flex', gap:14 }}>
+                    <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:13, fontWeight:700,
+                      color: plPct >= 0 ? '#16a34a' : '#dc2626' }}>
+                      {plPct >= 0 ? '+' : ''}{plPct.toFixed(2)}%
+                    </span>
+                    <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:13, fontWeight:600,
+                      color: plPct >= 0 ? '#16a34a' : '#dc2626' }}>
+                      {plPct >= 0 ? '+' : '-'}{currSymbol}{Math.round(Math.abs(plAbs)).toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+            <Field label="Institution / Provider">
+              <input className="input" value={form.institution}
+                onChange={e => f('institution', e.target.value)}
+                placeholder="e.g. Builder, society, self-assessed…" />
+            </Field>
+            <Field label="Remarks (optional)">
+              <input className="input" value={form.note} onChange={e => f('note', e.target.value)}
+                placeholder="e.g. Location, rental yield notes…"
+                onKeyDown={e => e.key === 'Enter' && handleSave()} />
+            </Field>
+
+            {/* Goal mapping */}
+            {isAsset && goalOptions.length > 0 && (
+              <Field label="Goal (optional)">
+                <select className="input" value={goalName} onChange={e => setGoalName(e.target.value)}>
+                  <option value="">— Not linked —</option>
+                  {goalOptions.map(g => <option key={g} value={g}>{g}</option>)}
+                </select>
+              </Field>
+            )}
+          </>
+        )}
+
+        {/* ── Standard fields for non-equity (excl. Real Estate) ───── */}
+        {!isCF && !isLiab && !isEquityCat && !isRealEstateCat && (
           <>
             <Field label={`Current Value (${currSymbol})`}>
               <input className="input" type="number" min="0" value={form.value}
@@ -355,6 +508,16 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
                 placeholder="Any relevant remarks…"
                 onKeyDown={e => e.key === 'Enter' && handleSave()} />
             </Field>
+
+            {/* Goal mapping */}
+            {isAsset && goalOptions.length > 0 && (
+              <Field label="Goal (optional)">
+                <select className="input" value={goalName} onChange={e => setGoalName(e.target.value)}>
+                  <option value="">— Not linked —</option>
+                  {goalOptions.map(g => <option key={g} value={g}>{g}</option>)}
+                </select>
+              </Field>
+            )}
           </>
         )}
 

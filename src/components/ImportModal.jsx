@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { Modal } from './UI'
-import { uid } from '../utils/helpers'
+import { uid, assetIdToTimestamp } from '../utils/helpers'
 import { ASSET_CATS } from '../utils/constants'
 import { useFinance } from '../context/FinanceContext'
 
@@ -668,8 +668,17 @@ export default function ImportModal({ onClose, onImported }) {
         )
 
         if (duplicate) {
-          // Update existing record — preserve the original id
-          updateItem('assets', { ...clean, id: duplicate.id })
+          const newVal = Number(clean.value) || 0
+          const oldVal = Number(duplicate.value) || 0
+          const valueChanged = Math.round(newVal * 100) !== Math.round(oldVal * 100)
+          updateItem('assets', {
+            ...duplicate,
+            ...clean,
+            id: duplicate.id,
+            _updatedDate: valueChanged
+              ? Date.now()
+              : (duplicate._updatedDate ?? assetIdToTimestamp(duplicate.id) ?? Date.now()),
+          })
           updated++
         } else {
           // New holding — assign fresh id

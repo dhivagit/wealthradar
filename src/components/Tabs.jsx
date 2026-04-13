@@ -205,6 +205,7 @@ export function Dashboard() {
 // ═══════════════════════════════════════════════════════════════════════════════
 export function Assets() {
   const { data, settings, deleteItem } = useFinance()
+  const { session } = useAuth()
   const { totalAssets } = useTotals()
   const [modal,        setModal]        = useState(null)
   const [importModal,  setImportModal]  = useState(false)
@@ -212,6 +213,22 @@ export function Assets() {
   const cur    = settings.currency
   const fmt    = v => formatCurrency(v, cur)
   const groups = groupBy(data?.assets || [], 'category')
+
+  const goalLookup = (() => {
+    if (!session?.userId) return {}
+    try {
+      const p = JSON.parse(localStorage.getItem(`wr_profile_${session.userId}`) || '{}')
+      const gm = (p?._goalMap && typeof p._goalMap === 'object') ? p._goalMap : {}
+      const out = {}
+      for (const [g, ids] of Object.entries(gm)) {
+        if (!Array.isArray(ids)) continue
+        ids.forEach(id => { out[id] = g })
+      }
+      return out
+    } catch {
+      return {}
+    }
+  })()
 
   const BROKER_ICONS = {
     'Zerodha':'🟡','Groww':'🟢','MF Central':'🔵','Kuvera':'🟣',
@@ -301,18 +318,17 @@ export function Assets() {
         </div>
       )}
 
-      {/* Asset groups — ordered: Fixed → Gold → MF → NPS (equity-linked) → Stocks → Others */}
+      {/* Asset groups — ordered: Fixed income → Real Estate → Gold → MF → NPS → Stocks → Others */}
       {(() => {
         const CAT_ORDER = [
-          // Fixed-income instruments (NPS excluded — classified as Equity in assetClasses.js)
           'PPF / EPF', 'SSA (Sukanya Samriddhi)', 'Fixed Deposits',
           'Bonds & Debentures', 'Cash & Equivalents',
+          'Real Estate',
           'Gold & Precious Metals',
           'Mutual Funds',
           'NPS',
           'Stocks & Equities',
-          // Then everything else
-          'Real Estate', 'Cryptocurrency', 'Business Assets', 'Vehicles', 'Others',
+          'Cryptocurrency', 'Business Assets', 'Vehicles', 'Others',
         ]
         return Object.entries(groups).sort(([a], [b]) => {
           const ai = CAT_ORDER.indexOf(a), bi = CAT_ORDER.indexOf(b)
@@ -341,7 +357,7 @@ export function Assets() {
                 })()}
               </div>
               <div style={{ display:'flex', alignItems:'center', gap:14, flexWrap:'wrap' }}>
-                {items.some(r => r._investedValue > 0) && (() => {
+                {(cat === 'Real Estate' || items.some(r => r._investedValue > 0)) && (() => {
                   const catInvested = items.reduce((s,r) => s + (r._investedValue||0), 0)
                   const catPL       = catTotal - catInvested
                   const catPLPct    = catInvested > 0 ? (catPL / catInvested) * 100 : null
@@ -366,11 +382,10 @@ export function Assets() {
             <DataTable currency={cur}
               cols={[
                 { key:'name',  label:'Name' },
-                // Fixed instruments → "Fixed Instrument" badge (NPS → Equity; matches ASSET_CLASS_MAP)
-                // Mutual Funds → "Category" (MF sub-type); Gold → type; Equities → sector
+                // NPS → Equity; Real Estate → own badge; fixed income → Fixed Instrument; MF/Gold → sub-type; else sector
                 ...(cat === 'NPS'
                   ? [{ key:'npsClass', label:'Category', render: r => {
-                      const detail = (r._sector || r.note || '').trim()
+                      const detail = (r._sector || '').trim()
                       return (
                         <div style={{ display:'flex', flexDirection:'column', gap:4, alignItems:'flex-start' }}>
                           <span style={{ fontSize:11, fontWeight:600, color:'#2563eb',
@@ -383,7 +398,14 @@ export function Assets() {
                         </div>
                       )
                     } }]
-                  : (['PPF / EPF','SSA (Sukanya Samriddhi)','Fixed Deposits','Bonds & Debentures','Cash & Equivalents','Real Estate','Vehicles','Business Assets'].includes(cat))
+                  : cat === 'Real Estate'
+                  ? [{ key:'reClass', label:'Category', render: () => (
+                      <span style={{ fontSize:11, fontWeight:600, color:'#c2410c',
+                        background:'rgba(234,88,12,0.08)', padding:'2px 10px', borderRadius:20, whiteSpace:'nowrap' }}>
+                        Real Estate
+                      </span>
+                    ) }]
+                  : (['PPF / EPF','SSA (Sukanya Samriddhi)','Fixed Deposits','Bonds & Debentures','Cash & Equivalents','Vehicles','Business Assets'].includes(cat))
                   ? [{ key:'category', label:'Category', render: () => (
                       <span style={{ fontSize:11, fontWeight:600, color:'#059669',
                         background:'rgba(5,150,105,0.08)', padding:'2px 10px', borderRadius:20 }}>
@@ -393,14 +415,14 @@ export function Assets() {
                   : (cat === 'Mutual Funds' || cat === 'Gold & Precious Metals')
                   ? [{ key:'subCat', label:'Category', color:() => '#7c3aed',
                       render: r => {
-                        const v = (r._sector || r.note || '').trim()
+                        const v = (r._sector || '').trim() || detectSubCategory(r.name, cat) || ''
                         return v
                           ? <span style={{ fontSize:12 }}>{v}</span>
                           : <span style={{ color:'#d0d4e0' }}>—</span>
                       } }]
                   : [{ key:'subCat', label:'Sector', color:() => '#6b7494',
                       render: r => {
-                        const v = (r._sector || r.note || '').trim()
+                        const v = (r._sector || '').trim() || detectSubCategory(r.name, cat) || ''
                         return v
                           ? <span style={{ fontSize:12 }}>{v}</span>
                           : <span style={{ color:'#d0d4e0' }}>—</span>
@@ -418,7 +440,7 @@ export function Assets() {
                     ? <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:'#4a4f6a' }}>{Number(r._qty).toLocaleString()}</span>
                     : <span style={{ color:'#d0d4e0' }}>—</span>
                 }] : []),
-                ...(items.some(r => r._investedValue > 0) ? [{
+                ...((cat === 'Real Estate' || items.some(r => r._investedValue > 0)) ? [{
                   key:'_investedValue', label:'Invested', right:true,
                   render: (r,c) => r._investedValue > 0
                     ? <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:'#8892b0' }}>{formatCurrency(r._investedValue, c)}</span>
@@ -426,7 +448,7 @@ export function Assets() {
                 }] : []),
                 { key:'value', label:'Present Value', right:true, mono:true,
                   render:(r,c) => <span style={{ color:'#c8920a', fontWeight:500 }}>{formatCurrency(r.value, c)}</span> },
-                ...(items.some(r => r._plPct !== undefined && r._plPct !== null) ? [{
+                ...((cat === 'Real Estate' || items.some(r => r._plPct !== undefined && r._plPct !== null)) ? [{
                   key:'_plPct', label:'P&L %', right:true,
                   render: r => {
                     const pct = r._plPct
@@ -461,15 +483,24 @@ export function Assets() {
                       <ProgressBar pct={totalAssets > 0 ? (r.value/totalAssets)*100 : 0} color="#c8953a" height={3} />
                     </div>
                   )},
+                { key:'goal', label:'Goal',
+                  render: r => {
+                    const g = goalLookup[r.id]
+                    return g ? (
+                      <span style={{ fontSize:12, color:'#4a4f6a', maxWidth:160, display:'inline-block', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }} title={g}>
+                        {g}
+                      </span>
+                    ) : <span style={{ color:'#d0d4e0' }}>—</span>
+                  }},
                 { key:'remarks', label:'Remarks',
                   render: r => {
-                    const sec = (r._sector || '').trim()
                     const nt = (r.note || '').trim()
-                    const remarkOnly = sec && nt && nt !== sec ? nt : ''
                     return (
-                      <span style={{ fontSize:12, color:'#6b7494', maxWidth:'150px', display:'inline-block',
-                        overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={remarkOnly}>
-                        {remarkOnly || '—'}
+                      <span style={{
+                        fontSize:12, color:'#6b7494', display:'block', maxWidth:320,
+                        whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', lineHeight:1.45,
+                      }}>
+                        {nt || '—'}
                       </span>
                     )
                   }},
@@ -831,7 +862,7 @@ export function Analytics() {
         {/* ── Broker-wise Investment Summary ──────────────────────────── */}
         {(data?.assets||[]).some(a => a.institution && a._investedValue > 0) && (() => {
           // Fixed instrument categories — exclude from broker P&L chart (no meaningful P&L data)
-          const FIXED_CATS = new Set(['PPF / EPF','SSA (Sukanya Samriddhi)','Fixed Deposits','Bonds & Debentures','Cash & Equivalents','Real Estate','Vehicles','Business Assets','Others'])
+          const FIXED_CATS = new Set(['PPF / EPF','SSA (Sukanya Samriddhi)','Fixed Deposits','Bonds & Debentures','Cash & Equivalents','Vehicles','Business Assets','Others'])
           // Group assets by broker/institution (equity + MF only)
           const brokerMap = {}
           ;(data?.assets||[])
