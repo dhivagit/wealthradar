@@ -146,6 +146,7 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
     monthly:       item?.monthly       || '',
     institution:   item?.institution   || '',
     rate:          item?.rate          || '',
+    dueDate:       item?.dueDate       || '',
     note:          item?.note          || item?._sector || '',
     // Equity-specific fields
     qty:           item?._qty          || '',
@@ -166,6 +167,7 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
   // Derived: is this an equity-type asset?
   const isEquityCat = EQUITY_CATS.has(form.category)
   const isMF        = form.category === 'Mutual Funds'
+  const isNpsCat    = !isCF && !isLiab && form.category === 'NPS'
   const isRealEstateCat = !isCF && !isLiab && form.category === 'Real Estate'
 
   // Auto-calc invested value when qty × avgPrice changes (equity / MF / gold / crypto only)
@@ -229,6 +231,7 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
         ? { monthly: parseFloat(form.monthly) || 0 }
         : { value:   newPresentValue }),       // fallback to invested if no present value
       ...(isLiab && form.rate ? { rate: parseFloat(form.rate) } : {}),
+      ...(isLiab ? { dueDate: form.category === 'Credit Card Debt' ? (form.dueDate || '') : '' } : {}),
       // Equity-specific metadata (only saved for equity/MF categories)
       ...(isEquityCat && {
         _qty:           qty,
@@ -240,6 +243,10 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
         _sector:        detectSector(form.name.trim()),
       }),
       ...(isRealEstateCat && {
+        _investedValue: invVal,
+        _plPct:         plPctFin,
+      }),
+      ...(isNpsCat && {
         _investedValue: invVal,
         _plPct:         plPctFin,
       }),
@@ -285,7 +292,7 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
   const title = `${isEdit ? 'Edit' : 'Add'} ${collection.charAt(0).toUpperCase() + collection.slice(1, -1)}`
 
   return (
-    <Modal title={title} onClose={onClose}>
+    <Modal title={title} onClose={onClose} wide={isLiab}>
       <div>
 
         {/* Name */}
@@ -491,8 +498,61 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
           </>
         )}
 
-        {/* ── Standard fields for non-equity (excl. Real Estate) ───── */}
-        {!isCF && !isLiab && !isEquityCat && !isRealEstateCat && (
+        {/* ── NPS: invested + present value + P&L ────────────────────── */}
+        {!isCF && !isLiab && isNpsCat && (
+          <>
+            <div style={{ background:'rgba(37,99,235,0.05)', border:'1px solid rgba(37,99,235,0.18)',
+              borderRadius:10, padding:'14px 16px', marginBottom:16 }}>
+              <div style={{ fontSize:11, fontWeight:600, color:'#1d4ed8', letterSpacing:'0.05em',
+                textTransform:'uppercase', marginBottom:12 }}>
+                🛡️ NPS valuation
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                <Field label={`Invested Value (${currSymbol})`} hint="Total contribution amount">
+                  <div style={{ position:'relative' }}>
+                    <span style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)',
+                      color:'#8892b0', fontSize:13, pointerEvents:'none' }}>₹</span>
+                    <input className="input" type="number" min="0" step="any"
+                      value={form.investedValue} onChange={e => f('investedValue', e.target.value)}
+                      placeholder="0" style={{ paddingLeft:22, width:'100%', boxSizing:'border-box' }} />
+                  </div>
+                </Field>
+                <Field label={`Present Value (${currSymbol})`} hint={plPct !== null ? `P&L: ${plPct >= 0 ? '+' : ''}${plPct.toFixed(2)}% (${plPct >= 0 ? '+' : ''}${currSymbol}${Math.round(Math.abs(plAbs)).toLocaleString('en-IN')})` : 'Current corpus value'}>
+                  <div style={{ position:'relative' }}>
+                    <span style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)',
+                      color:'#8892b0', fontSize:13, pointerEvents:'none' }}>₹</span>
+                    <input className="input" type="number" min="0" step="any"
+                      value={form.value} onChange={e => f('value', e.target.value)}
+                      placeholder="0" style={{ paddingLeft:22, width:'100%', boxSizing:'border-box' }} />
+                  </div>
+                </Field>
+              </div>
+            </div>
+            <Field label="Institution / Provider">
+              <input className="input" value={form.institution}
+                onChange={e => f('institution', e.target.value)}
+                placeholder="e.g. Protean, KFintech…" />
+            </Field>
+            <Field label="Remarks (optional)">
+              <input className="input" value={form.note} onChange={e => f('note', e.target.value)}
+                placeholder="e.g. Active choice, equity 75%…"
+                onKeyDown={e => e.key === 'Enter' && handleSave()} />
+            </Field>
+
+            {/* Goal mapping */}
+            {isAsset && goalOptions.length > 0 && (
+              <Field label="Goal (optional)">
+                <select className="input" value={goalName} onChange={e => setGoalName(e.target.value)}>
+                  <option value="">— Not linked —</option>
+                  {goalOptions.map(g => <option key={g} value={g}>{g}</option>)}
+                </select>
+              </Field>
+            )}
+          </>
+        )}
+
+        {/* ── Standard fields for non-equity (excl. Real Estate / NPS) ───── */}
+        {!isCF && !isLiab && !isEquityCat && !isRealEstateCat && !isNpsCat && (
           <>
             <Field label={`Current Value (${currSymbol})`}>
               <input className="input" type="number" min="0" value={form.value}
@@ -546,6 +606,12 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
                 value={form.rate} onChange={e => f('rate', e.target.value)}
                 placeholder="e.g. 8.5" />
             </Field>
+            {form.category === 'Credit Card Debt' && (
+              <Field label="Due Date">
+                <input className="input" type="date"
+                  value={form.dueDate} onChange={e => f('dueDate', e.target.value)} />
+              </Field>
+            )}
             <Field label="Remarks (optional)">
               <input className="input" value={form.note} onChange={e => f('note', e.target.value)}
                 placeholder="Any relevant remarks…"

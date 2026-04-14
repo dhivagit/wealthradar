@@ -382,7 +382,7 @@ export function Assets() {
             <DataTable currency={cur}
               cols={[
                 { key:'name',  label:'Name' },
-                // NPS → Equity; Real Estate → own badge; fixed income → Fixed Instrument; MF/Gold → sub-type; else sector
+                // NPS → Equity; Real Estate → own badge; debt-style categories → Debt badge; MF/Gold → sub-type; else sector
                 ...(cat === 'NPS'
                   ? [{ key:'npsClass', label:'Category', render: r => {
                       const detail = (r._sector || '').trim()
@@ -409,7 +409,7 @@ export function Assets() {
                   ? [{ key:'category', label:'Category', render: () => (
                       <span style={{ fontSize:11, fontWeight:600, color:'#059669',
                         background:'rgba(5,150,105,0.08)', padding:'2px 10px', borderRadius:20 }}>
-                        Fixed Instrument
+                        Debt
                       </span>
                     )}]
                   : (cat === 'Mutual Funds' || cat === 'Gold & Precious Metals')
@@ -446,7 +446,7 @@ export function Assets() {
                     ? <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:'#8892b0' }}>{formatCurrency(r._investedValue, c)}</span>
                     : <span style={{ color:'#d0d4e0' }}>—</span>
                 }] : []),
-                { key:'value', label:'Present Value', right:true, mono:true,
+                { key:'value', label: cat === 'Bonds & Debentures' ? 'Invested Value' : 'Present Value', right:true, mono:true,
                   render:(r,c) => <span style={{ color:'#c8920a', fontWeight:500 }}>{formatCurrency(r.value, c)}</span> },
                 ...((cat === 'Real Estate' || items.some(r => r._plPct !== undefined && r._plPct !== null)) ? [{
                   key:'_plPct', label:'P&L %', right:true,
@@ -588,6 +588,16 @@ export function Liabilities() {
                   : <span style={{ color: '#b0b8d0' }}>—</span> },
               { key: 'value', label: 'Outstanding', right: true, mono: true,
                 render: (r, c) => <span style={{ color: '#dc2626' }}>{formatCurrency(r.value, c)}</span> },
+              ...((cat === 'Credit Card Debt' || items.some(r => (r.dueDate || '').trim())) ? [{
+                key: 'dueDate', label: 'Due Date', right: true,
+                render: r => {
+                  const raw = (r.dueDate || '').trim()
+                  if (!raw) return <span style={{ color: '#b0b8d0' }}>—</span>
+                  const d = new Date(raw)
+                  if (Number.isNaN(d.getTime())) return <span style={{ color: '#6b7494', fontSize: 12 }}>{raw}</span>
+                  return <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: '#6b7494' }}>{d.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' })}</span>
+                },
+              }] : []),
               { key: 'note', label: 'Remarks', color: () => '#6b7494' },
             ]}
             rows={items}
@@ -859,14 +869,12 @@ export function Analytics() {
           )
         })()}
 
-        {/* ── Broker-wise Investment Summary ──────────────────────────── */}
-        {(data?.assets||[]).some(a => a.institution && a._investedValue > 0) && (() => {
-          // Fixed instrument categories — exclude from broker P&L chart (no meaningful P&L data)
-          const FIXED_CATS = new Set(['PPF / EPF','SSA (Sukanya Samriddhi)','Fixed Deposits','Bonds & Debentures','Cash & Equivalents','Vehicles','Business Assets','Others'])
-          // Group assets by broker/institution (equity + MF only)
+        {/* ── Broker-wise Stock Summary (direct equities only) ────────── */}
+        {(data?.assets||[]).some(a => a.category === 'Stocks & Equities' && a.institution && a._investedValue > 0) && (() => {
+          // Group only direct stocks/equities by broker.
           const brokerMap = {}
           ;(data?.assets||[])
-            .filter(a => !FIXED_CATS.has(a.category))
+            .filter(a => a.category === 'Stocks & Equities')
             .forEach(a => {
             const key = a.institution || 'Manual'
             if (!brokerMap[key]) brokerMap[key] = { name:key, assets:[], invested:0, present:0 }
@@ -892,7 +900,7 @@ export function Analytics() {
           return (
             <div className="card" style={{ padding:24, gridColumn:'1 / -1' }}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:20, flexWrap:'wrap', gap:12 }}>
-                <h3 className="section-heading">Broker-wise Summary</h3>
+                <h3 className="section-heading">Broker-wise Stock Summary</h3>
                 {/* Portfolio totals */}
                 <div style={{ display:'flex', gap:20, flexWrap:'wrap' }}>
                   {[
@@ -915,8 +923,7 @@ export function Analytics() {
                   const color   = BROKER_COLORS[b.name] || '#8892b0'
                   const plColor = b.plPct >= 0 ? '#16a34a' : '#dc2626'
                   const allocPct = totalPresent > 0 ? (b.present / totalPresent * 100) : 0
-                  const stocks  = b.assets.filter(a => !a._isMF).length
-                  const mfs     = b.assets.filter(a => a._isMF).length
+                  const stocks  = b.assets.length
                   return (
                     <div key={b.name} style={{ background:'#f8f9fc', border:'1px solid #eef0f8', borderRadius:12, padding:'16px 18px', borderLeft:`3px solid ${color}` }}>
                       {/* Header */}
@@ -926,7 +933,6 @@ export function Analytics() {
                           <div style={{ fontSize:11, color:'#8892b0', marginTop:2 }}>
                             {b.assets.length} holdings
                             {stocks > 0 && <span style={{ marginLeft:6 }}>· {stocks} stocks</span>}
-                            {mfs   > 0 && <span style={{ marginLeft:6 }}>· {mfs} MFs</span>}
                           </div>
                         </div>
                         <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, fontWeight:600,
@@ -1001,7 +1007,7 @@ export function Analytics() {
         <div className="card" style={{ padding: 24 }}>
           <h3 className="section-heading" style={{ marginBottom: 4 }}>Asset Category Breakdown</h3>
           <p style={{ fontSize: 12, color: '#8892b0', marginBottom: 16 }}>
-            Portfolio grouped by asset class — NPS treated as Equity Hybrid, PPF/EPF/SSA as Fixed Instruments
+                Portfolio grouped by asset class — NPS treated as Equity Hybrid, PPF/EPF/SSA and similar as Debt
           </p>
           {(() => {
             // Map each WealthRadar category → display group

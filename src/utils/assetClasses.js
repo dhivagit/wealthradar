@@ -31,12 +31,20 @@ export const ASSET_CLASS_MAP = {
 }
 
 /**
- * Classify a mutual fund by its sub-type (equity, debt, gold)
- * Based on keywords in the note or _sector field
+ * Classify a mutual fund by sub-type (equity, debt, cash, gold)
+ * Uses note / sector / name text passed by caller.
  */
-export function mfClass(note = '') {
-  const n = (note || '').toLowerCase()
-  if (/debt|bond|gilt|liquid|overnight|money market|banking psu|floater|credit risk|short dur|long dur|government|securities|fixed income/.test(n)) {
+export function mfClass(text = '') {
+  const n = (text || '').toLowerCase()
+  // Treat BAF/arbitrage as equity-oriented for allocation view.
+  if (/balanced advantage|\bbaf\b|arbitrage/.test(n)) {
+    return 'Equity'
+  }
+  // Liquid/overnight/money-market behave as cash equivalents.
+  if (/liquid|overnight|money market|ultra short|cash fund/.test(n)) {
+    return 'Cash'
+  }
+  if (/debt|bond|gilt|banking psu|floater|credit risk|short dur|long dur|government|securities|fixed income/.test(n)) {
     return 'Debt'
   }
   if (/gold|silver|commodity/.test(n)) {
@@ -57,7 +65,8 @@ export function getAssetClass(asset) {
 
   // For mutual funds, check if it's actually a debt or gold MF
   if (cls === 'Equity' && (asset.category === 'Mutual Funds' || asset._isMF)) {
-    return mfClass(asset.note || asset._sector || '')
+    // Fall back to fund name when note/sector is missing.
+    return mfClass([asset.note, asset._sector, asset.name].filter(Boolean).join(' '))
   }
 
   return cls

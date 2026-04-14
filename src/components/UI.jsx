@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { formatCurrency, formatCompact } from '../utils/helpers'
 
 // ── Stat Card ─────────────────────────────────────────────────────────────────
@@ -36,10 +37,15 @@ export function Modal({ title, onClose, children, wide = false }) {
   useEffect(() => {
     const handler = (e) => e.key === 'Escape' && onClose()
     document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', handler)
+      document.body.style.overflow = prevOverflow
+    }
   }, [onClose])
 
-  return (
+  return createPortal(
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal-box" style={{ width: wide ? 680 : 520 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
@@ -48,7 +54,8 @@ export function Modal({ title, onClose, children, wide = false }) {
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 
