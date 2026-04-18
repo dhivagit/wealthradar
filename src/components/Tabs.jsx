@@ -12,7 +12,8 @@ import { StatCard, ProgressBar, DataTable, DonutSVG, ChartTooltip, Notification 
 import EntryModal      from './EntryModal'
 import ImportModal     from './ImportModal'
 import { PALETTE, CAT_COLORS, MILESTONES } from '../utils/constants'
-import { groupBy, formatCurrency, formatCompact } from '../utils/helpers'
+import { groupBy, formatCurrency, formatCompact, formatUsdAmount, assetIdToTimestamp } from '../utils/helpers'
+import { fetchUsdInrRate } from '../utils/fx'
 import { useAuth } from '../context/AuthContext'
 import { CURRENCIES } from '../utils/constants'
 import { ALL_CLASSES, CLASS_COLORS, ASSET_CLASS_MAP, mfClass, getAssetClass } from '../utils/assetClasses'
@@ -70,7 +71,7 @@ export function Dashboard() {
         const plBorder  = pl >= 0 ? 'rgba(22,163,74,0.2)'  : 'rgba(220,38,38,0.2)'
         const byType = [
           { label: 'Stocks', items: data.assets.filter(a => !a._isMF && a._investedValue > 0) },
-          { label: 'Mutual Funds', items: data.assets.filter(a => a._isMF  && a._investedValue > 0) },
+          { label: 'Mutual Funds', items: data.assets.filter(a => a._isMF && a._investedValue > 0) },
         ].filter(t => t.items.length > 0).map(t => ({
           ...t,
           invested: t.items.reduce((s,a) => s + a._investedValue, 0),
@@ -204,15 +205,18 @@ export function Dashboard() {
 // ASSETS
 // ═══════════════════════════════════════════════════════════════════════════════
 export function Assets() {
-  const { data, settings, deleteItem } = useFinance()
+  const { data, settings, deleteItem, persistSettings, batchUpdateCollection } = useFinance()
   const { session } = useAuth()
   const { totalAssets } = useTotals()
   const [modal,        setModal]        = useState(null)
   const [importModal,  setImportModal]  = useState(false)
   const [importToast,  setImportToast]  = useState(null)
+  const [usFxBusy,     setUsFxBusy]     = useState(false)
   const cur    = settings.currency
   const fmt    = v => formatCurrency(v, cur)
-  const groups = groupBy(data?.assets || [], 'category')
+  const domesticAssets = (data?.assets || []).filter(a => !a._isUS)
+  const usAssets = (data?.assets || []).filter(a => a._isUS)
+  const groups = groupBy(domesticAssets, 'category')
   const resolveMFCategory = (a) => (
     detectMFCategory(a?._sector || '') ||
     detectMFCategory(a?.note || '') ||
@@ -249,6 +253,39 @@ export function Assets() {
     'ICICI Direct':'🔴','INDMoney':'🟠',
   }
 
+  const refreshUsdInrAcrossHoldings = useCallback(async () => {
+    setUsFxBusy(true)
+    try {
+      const rate = await fetchUsdInrRate()
+      persistSettings({ ...settings, usdInrRate: rate })
+
+      const nextAssets = (data?.assets || []).map(asset => {
+        if (!asset?._isUS) return asset
+        const qty = Number(asset?._qty) || 0
+        const avgUsd = Number(asset?._avgPriceUsd) || 0
+        const curUsd = Number(asset?._currentPriceUsd) || 0
+        const invested = qty > 0 && avgUsd > 0 ? Math.round(qty * avgUsd * rate * 100) / 100 : (Number(asset?._investedValue) || 0)
+        const present = qty > 0 && curUsd > 0 ? Math.round(qty * curUsd * rate * 100) / 100 : (Number(asset?.value) || 0)
+        const plPct = invested > 0 && present > 0 ? ((present - invested) / invested) * 100 : null
+        return {
+          ...asset,
+          _usdInrRate: rate,
+          _investedValue: invested,
+          value: present || invested,
+          _ltp: qty > 0 && present > 0 ? Math.round((present / qty) * 100) / 100 : 0,
+          _plPct: plPct,
+          _updatedDate: Date.now(),
+        }
+      })
+
+      batchUpdateCollection('assets', nextAssets)
+    } catch {
+      window.alert('Could not fetch USD→INR. Check your connection or set the rate in Settings.')
+    } finally {
+      setUsFxBusy(false)
+    }
+  }, [batchUpdateCollection, data?.assets, persistSettings, settings])
+
   return (
     <div>
       {/* Header */}
@@ -258,6 +295,9 @@ export function Assets() {
           <p style={{ color:'#8892b0', fontSize:13, marginTop:4 }}>
             Total: <span style={{ color:'#16a34a', fontFamily:"'JetBrains Mono',monospace" }}>{fmt(totalAssets)}</span>
             <span style={{ color:'#b0b8d0', marginLeft:12 }}>{data?.assets?.length || 0} holdings</span>
+            {usAssets.length > 0 && (
+              <span style={{ color:'#6366f1', marginLeft:8, fontSize:12 }}>({usAssets.length} US)</span>
+            )}
           </p>
         </div>
         <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
@@ -265,6 +305,10 @@ export function Assets() {
             onClick={() => setImportModal(true)}
             style={{ color:'#c8953a', borderColor:'rgba(200,146,10,0.35)', gap:8 }}>
             📥 Import from Broker / Bank
+          </button>
+          <button className="btn btn-outline" onClick={() => setModal({ collection:'assets', item: { _openAsUs: true } })}
+            style={{ borderColor:'rgba(99,102,241,0.35)', color:'#4f46e5' }}>
+            + Add US holding
           </button>
           <button className="btn btn-gold" onClick={() => setModal({ collection:'assets', item:null })}>
             + Add Asset
@@ -329,6 +373,144 @@ export function Assets() {
           ))}
         </div>
       )}
+
+      {/* US holdings — shown as a separate section table (similar to other asset tables) */}
+      {usAssets.length > 0 && (() => {
+        const usTotal = usAssets.reduce((s, r) => s + (r.value || 0), 0)
+        return (
+          <div className="card" style={{ marginBottom:16, overflow:'hidden' }}>
+            <div style={{ padding:'14px 20px', borderBottom:'1px solid #eef0f8', display:'flex', justifyContent:'space-between', alignItems:'flex-start', background:'#f8f9fc', flexWrap:'wrap', gap:8 }}>
+              <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                  <span className="tag tag-asset">US holdings</span>
+                  <span style={{ fontSize:12, color:'#8892b0' }}>{usAssets.length} holding{usAssets.length !== 1 ? 's' : ''}</span>
+                </div>
+                {(() => {
+                  const tsList = usAssets
+                    .map(r => r._updatedDate || assetIdToTimestamp(r.id))
+                    .filter(t => t != null && Number.isFinite(t))
+                  const mostRecent = tsList.length ? Math.max(...tsList) : null
+                  const formatted = mostRecent
+                    ? new Date(mostRecent).toLocaleDateString('en-IN', { year:'numeric', month:'short', day:'numeric' })
+                    : null
+                  return formatted ? (
+                    <span style={{ fontSize:11, color:'#6b7494', fontStyle:'italic' }}>Updated: {formatted}</span>
+                  ) : null
+                })()}
+                <span style={{ fontSize:11, color:'#6b7494', fontStyle:'italic' }}>
+                  USD inputs shown below; totals use INR conversion per row. Default USD→INR for new rows: {settings?.usdInrRate != null ? Number(settings.usdInrRate).toFixed(2) : '—'}
+                </span>
+              </div>
+              <div style={{ display:'flex', alignItems:'center', gap:14, flexWrap:'wrap' }}>
+                <span style={{ fontSize:12, color:'#8892b0' }}>{totalAssets > 0 ? ((usTotal / totalAssets) * 100).toFixed(1) : 0}% of portfolio</span>
+                <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:14, color:'#c8920a', fontWeight:600 }}>{fmt(usTotal)}</span>
+                <button type="button" className="btn btn-outline" disabled={usFxBusy}
+                  onClick={refreshUsdInrAcrossHoldings}>
+                  {usFxBusy ? 'Fetching…' : 'Refresh default USD→INR'}
+                </button>
+              </div>
+            </div>
+
+            <DataTable currency={cur}
+              cols={[
+                { key:'name', label:'Name' },
+                { key:'subCat', label:'Category', color:() => '#6b7494',
+                  render: r => (
+                    <span style={{ fontSize:12 }}>
+                      {r.category === 'Mutual Funds' ? 'Mutual Funds (US)' : 'Stocks & Equities (US)'}
+                    </span>
+                  )},
+                { key:'sector', label:'Sector', color:() => '#6b7494',
+                  render: r => {
+                    const v = r.category === 'Mutual Funds'
+                      ? (resolveMFCategory(r) || '')
+                      : ((r._sector || '').trim() || detectSubCategory(r.name, 'Stocks & Equities') || '')
+                    return v
+                      ? <span style={{ fontSize:12 }}>{v}</span>
+                      : <span style={{ color:'#d0d4e0' }}>—</span>
+                  }},
+                { key:'institution', label:'Source',
+                  render: r => (
+                    <span style={{ color:'#8892b0', fontSize:12 }}>
+                      {r.institution || '—'}
+                    </span>
+                  )},
+                { key:'_qty', label:'Qty/Units', right:true,
+                  render: r => r._qty > 0
+                    ? <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:'#4a4f6a' }}>{Number(r._qty).toLocaleString('en-US', { maximumFractionDigits: 6 })}</span>
+                    : <span style={{ color:'#d0d4e0' }}>—</span>
+                },
+                { key:'avgUsd', label:'Avg Buy (USD)', right:true,
+                  render: r => <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:'#4a4f6a' }}>{formatUsdAmount(r._avgPriceUsd)}</span> },
+                { key:'curUsd', label:'Current (USD)', right:true,
+                  render: r => <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:'#4a4f6a' }}>{formatUsdAmount(r._currentPriceUsd)}</span> },
+                { key:'fx', label:'USD→INR', right:true,
+                  render: r => <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:'#8892b0' }}>{r._usdInrRate ? Number(r._usdInrRate).toFixed(2) : '—'}</span> },
+                { key:'_investedValue', label:'Invested', right:true,
+                  render: (r,c) => r._investedValue > 0
+                    ? <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:'#8892b0' }}>{formatCurrency(r._investedValue, c)}</span>
+                    : <span style={{ color:'#d0d4e0' }}>—</span>
+                },
+                { key:'value', label:'Present Value', right:true, mono:true,
+                  render:(r,c) => <span style={{ color:'#c8920a', fontWeight:500 }}>{formatCurrency(r.value || 0, c)}</span> },
+                ...((usAssets.some(r => r._plPct !== undefined && r._plPct !== null)) ? [{
+                  key:'_plPct', label:'P&L %', right:true,
+                  render: r => {
+                    const pct = r._plPct
+                    if (pct === undefined || pct === null) return <span style={{ color:'#d0d4e0' }}>—</span>
+                    const col = pct >= 0 ? '#16a34a' : '#dc2626'
+                    const prefix = pct >= 0 ? '+' : ''
+                    return (
+                      <div style={{ textAlign:'right' }}>
+                        <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, fontWeight:600,
+                          color:col, background: pct >= 0 ? 'rgba(22,163,74,0.08)' : 'rgba(220,38,38,0.07)',
+                          padding:'2px 8px', borderRadius:10, display:'inline-block' }}>
+                          {prefix}{Number(pct).toFixed(2)}%
+                        </div>
+                      </div>
+                    )
+                  },
+                }] : []),
+                { key:'alloc', label:'Allocation', right:true,
+                  render: r => (
+                    <div style={{ minWidth:72 }}>
+                      <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:3 }}>
+                        <span style={{ fontSize:11, fontFamily:"'JetBrains Mono',monospace", color:'#8892b0' }}>
+                          {totalAssets > 0 ? (((r.value || 0) / totalAssets) * 100).toFixed(1) : 0}%
+                        </span>
+                      </div>
+                      <ProgressBar pct={totalAssets > 0 ? ((r.value || 0) / totalAssets) * 100 : 0} color="#c8953a" height={3} />
+                    </div>
+                  )},
+                { key:'goal', label:'Goal',
+                  render: r => {
+                    const g = goalLookup[r.id]
+                    return g ? (
+                      <span style={{ fontSize:12, color:'#4a4f6a', maxWidth:160, display:'inline-block', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }} title={g}>
+                        {g}
+                      </span>
+                    ) : <span style={{ color:'#d0d4e0' }}>—</span>
+                  }},
+                { key:'remarks', label:'Remarks',
+                  render: r => {
+                    const nt = (r.note || '').trim()
+                    return (
+                      <span style={{
+                        fontSize:12, color:'#6b7494', display:'block', maxWidth:320,
+                        whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', lineHeight:1.45,
+                      }}>
+                        {nt || '—'}
+                      </span>
+                    )
+                  }},
+              ]}
+              rows={usAssets}
+              onEdit={item => setModal({ collection:'assets', item })}
+              onDelete={id => deleteItem('assets', id)}
+            />
+          </div>
+        )
+      })()}
 
       {/* Asset groups — ordered by holdings count (ascending) */}
       {(() => {
@@ -948,12 +1130,47 @@ export function Analytics() {
           )
         })()}
 
-        {/* ── Broker-wise Stock Summary (direct equities only) ────────── */}
-        {(data?.assets||[]).some(a => a.category === 'Stocks & Equities' && a.institution && a._investedValue > 0) && (() => {
-          // Group only direct stocks/equities by broker.
+        {/* ── Broker-wise Stock Summary (listed: stocks, equity ETFs, gold/silver ETFs; excludes gold/silver FoF & gold/silver mutual funds) ────────── */}
+        {(() => {
+          const goldTypeOf = (a) =>
+            detectGoldType(a?._sector || '') ||
+            detectGoldType(a?.note || '') ||
+            detectGoldType(a?.name || '')
+
+          const isGoldSilverEtfHolding = (a) => goldTypeOf(a) === 'Gold/Silver ETF'
+
+          // Gold/Silver wrapper funds & FoFs (mutual fund route) — not exchange-traded commodity ETFs
+          const isGoldSilverFundOrFoF = (a) => {
+            if (goldTypeOf(a) === 'Gold/Silver Fund') return true
+            const n = (a.name || '').toLowerCase()
+            const isFoF = /fund of fund/.test(n) || / fof/.test(n) || n.endsWith('fof') || /-fof/.test(n)
+            return isFoF && /gold|silver|commodity|precious/.test(n)
+          }
+
+          const isEquityEtfMutualFund = (a) => {
+            if (a.category !== 'Mutual Funds' || !a._isMF) return false
+            if (isGoldSilverEtfHolding(a) || isGoldSilverFundOrFoF(a)) return false
+            const n = (a.name || '').toLowerCase()
+            return /\betf\b|\bbees\b|exchange traded|index fund|nifty.*(etf|bees)|sensex.*(etf|bees)/.test(n) || n.endsWith('etf')
+          }
+
+          const isBrokerStockSummaryAsset = (a) => {
+            if (a.category === 'Stocks & Equities') return true
+            // Demat gold/silver ETFs (e.g. GOLD BEES, SILVERBEES) under Gold or MF
+            if (
+              isGoldSilverEtfHolding(a) &&
+              (a.category === 'Gold & Precious Metals' || (a.category === 'Mutual Funds' && a._isMF))
+            )
+              return true
+            return isEquityEtfMutualFund(a)
+          }
+
+          const assets = data?.assets || []
+          if (!assets.some(a => isBrokerStockSummaryAsset(a) && a.institution && a._investedValue > 0)) return null
+
           const brokerMap = {}
-          ;(data?.assets||[])
-            .filter(a => a.category === 'Stocks & Equities')
+          ;assets
+            .filter(isBrokerStockSummaryAsset)
             .forEach(a => {
             const key = a.institution || 'Manual'
             if (!brokerMap[key]) brokerMap[key] = { name:key, assets:[], invested:0, present:0 }
@@ -973,13 +1190,13 @@ export function Analytics() {
           const BROKER_COLORS = {
             'Zerodha':'#c8920a','ICICI Direct':'#dc2626','Groww':'#16a34a',
             'INDMoney':'#d97706','MF Central':'#2563eb','Kuvera':'#7c3aed',
-            'NSDL/CDSL':'#0891b2','EPFO':'#059669','Manual':'#8892b0',
+            'Aionion Capital':'#0d9488','NSDL/CDSL':'#0891b2','EPFO':'#059669','Manual':'#8892b0',
           }
 
           return (
             <div className="card" style={{ padding:24, gridColumn:'1 / -1' }}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:20, flexWrap:'wrap', gap:12 }}>
-                <h3 className="section-heading">Broker-wise Stock Summary</h3>
+                <h3 className="section-heading">Broker-wise Stock and ETF Summary</h3>
                 {/* Portfolio totals */}
                 <div style={{ display:'flex', gap:20, flexWrap:'wrap' }}>
                   {[
@@ -1002,7 +1219,7 @@ export function Analytics() {
                   const color   = BROKER_COLORS[b.name] || '#8892b0'
                   const plColor = b.plPct >= 0 ? '#16a34a' : '#dc2626'
                   const allocPct = totalPresent > 0 ? (b.present / totalPresent * 100) : 0
-                  const stocks  = b.assets.length
+                  const positions = b.assets.length
                   return (
                     <div key={b.name} style={{ background:'#f8f9fc', border:'1px solid #eef0f8', borderRadius:12, padding:'16px 18px', borderLeft:`3px solid ${color}` }}>
                       {/* Header */}
@@ -1010,8 +1227,7 @@ export function Analytics() {
                         <div>
                           <div style={{ fontSize:14, fontWeight:600, color:'#1a1d2e' }}>{b.name}</div>
                           <div style={{ fontSize:11, color:'#8892b0', marginTop:2 }}>
-                            {b.assets.length} holdings
-                            {stocks > 0 && <span style={{ marginLeft:6 }}>· {stocks} stocks</span>}
+                            {positions} {positions === 1 ? 'position' : 'positions'} (stocks, equity ETFs, gold/silver ETFs)
                           </div>
                         </div>
                         <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, fontWeight:600,
@@ -1584,8 +1800,8 @@ export function Analytics() {
         const mcapMap = {}
         equityAssets.forEach(a => {
           if (!a.value) return
-          // Only classify stocks — skip Gold ETFs, Crypto etc. from market cap buckets
-          if (a.category !== 'Stocks & Equities') return
+          // Only classify stocks — skip Gold ETFs, Crypto, US listings, etc. from market cap buckets
+          if (a.category !== 'Stocks & Equities' || a._isUS) return
           const cap = classifyMarketCap(a.name, a._isin || '')
           if (!mcapMap[cap]) mcapMap[cap] = { value: 0, count: 0 }
           mcapMap[cap].value += a.value
@@ -1871,7 +2087,7 @@ export function Analytics() {
               {/* Drill-down: holdings in selected market cap bucket */}
               {activeMcap && (() => {
                 const capAssets = equityAssets
-                  .filter(a => a.category === 'Stocks & Equities' && classifyMarketCap(a.name, a._isin||'') === activeMcap)
+                  .filter(a => a.category === 'Stocks & Equities' && !a._isUS && classifyMarketCap(a.name, a._isin||'') === activeMcap)
                   .sort((a, b) => b.value - a.value)
                 const capColor   = MCAP_COLORS[activeMcap] || '#8892b0'
                 const capInvested = capAssets.reduce((s,a) => s + (a._investedValue||0), 0)
@@ -2336,10 +2552,18 @@ export function Settings({ onToast }) {
   const { data, settings, persistSettings, exportJSON, exportCSV, takeSnapshot, importJSON, resetToSample, batchUpdateCollection } = useFinance()
   const totals = useTotals()
   const [localCur, setLocalCur] = useState(settings.currency || 'INR')
+  const [localUsdInr, setLocalUsdInr] = useState(() => String(settings.usdInrRate ?? 83))
+  const [usdFxBusy, setUsdFxBusy] = useState(false)
   const fileRef = useState(null)
 
+  useEffect(() => {
+    setLocalCur(settings.currency || 'INR')
+    setLocalUsdInr(String(settings.usdInrRate ?? 83))
+  }, [settings.currency, settings.usdInrRate])
+
   const savePrefs = () => {
-    persistSettings({ ...settings, currency: localCur })
+    const rate = parseFloat(localUsdInr)
+    persistSettings({ ...settings, currency: localCur, usdInrRate: Number.isFinite(rate) && rate > 0 ? rate : 83 })
     onToast('Preferences saved!', 'success')
   }
 
@@ -2620,6 +2844,30 @@ export function Settings({ onToast }) {
             ))}
           </select>
           <div style={{ fontSize: 12, color: '#8892b0', marginTop: 8 }}>Default is INR (₹) for Indian users</div>
+        </div>
+        <div style={{ marginBottom: 20 }}>
+          <label className="label">Default USD → INR rate (US holdings)</label>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', maxWidth: 480 }}>
+            <input className="input" type="number" min="0" step="any" value={localUsdInr}
+              onChange={e => setLocalUsdInr(e.target.value)} placeholder="e.g. 83.25" style={{ flex: 1, minWidth: 140 }} />
+            <button type="button" className="btn btn-outline" disabled={usdFxBusy}
+              onClick={async () => {
+                setUsdFxBusy(true)
+                try {
+                  const r = await fetchUsdInrRate()
+                  setLocalUsdInr(String(Math.round(r * 10000) / 10000))
+                  persistSettings({ ...settings, usdInrRate: r })
+                  onToast(`USD→INR updated to ${r.toFixed(4)}`, 'success')
+                } catch {
+                  onToast('Could not fetch USD→INR', 'error')
+                } finally {
+                  setUsdFxBusy(false)
+                }
+              }}>
+              {usdFxBusy ? 'Fetching…' : 'Fetch live rate'}
+            </button>
+          </div>
+          <div style={{ fontSize: 12, color: '#8892b0', marginTop: 8 }}>Used when adding US assets and shown on the Assets page as the default FX hint.</div>
         </div>
         <button className="btn btn-gold" onClick={savePrefs}>Save Preferences</button>
       </div>

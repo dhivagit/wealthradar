@@ -5,12 +5,14 @@ import { detectSubCategory } from '../utils/detection'
 
 const FinanceContext = createContext(null)
 
+const DEFAULT_SETTINGS = { currency: 'INR', usdInrRate: 83 }
+
 const SUBCAT_ASSET_CATS = ['Stocks & Equities', 'Mutual Funds', 'Gold & Precious Metals', 'Cryptocurrency']
 
 export function FinanceProvider({ children }) {
   const { session } = useAuth()
   const [data,     setDataState] = useState(null)
-  const [settings, setSettingsState] = useState({ currency: 'INR' })
+  const [settings, setSettingsState] = useState(() => ({ ...DEFAULT_SETTINGS }))
 
   // ── Sync with detection ───────────────────────────────────────────────────
   // Automatically fill missing sectors/categories for existing data
@@ -18,6 +20,7 @@ export function FinanceProvider({ children }) {
     if (!d || !d.assets) return d
     let changed = false
     const newAssets = d.assets.map(a => {
+      if (a._isUS) return a
       if (!SUBCAT_ASSET_CATS.includes(a.category)) return a
       const hasSec = Boolean((a._sector || '').trim())
       const hasNote = Boolean((a.note || '').trim())
@@ -35,7 +38,7 @@ export function FinanceProvider({ children }) {
     if (!session) { setDataState(null); return }
     const rawData = DB.getData(session.userId)
     const enriched = rawData ? enrichData(rawData) : createSampleData()
-    const s = DB.getSettings(session.userId) || { currency: 'INR' }
+    const s = { ...DEFAULT_SETTINGS, ...(DB.getSettings(session.userId) || {}) }
     
     // If enrichData modified anything, persist it back immediately
     if (rawData && JSON.stringify(enriched) !== JSON.stringify(rawData)) {

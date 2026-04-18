@@ -3,9 +3,12 @@ import { Modal, Field } from './UI'
 import { ASSET_CATS, LIABILITY_CATS, INCOME_CATS, EXPENSE_CATS } from '../utils/constants'
 import { CURRENCIES } from '../utils/constants'
 import { uid, assetIdToTimestamp } from '../utils/helpers'
+import { fetchUsdInrRate } from '../utils/fx'
 import { useFinance } from '../context/FinanceContext'
 import { useAuth } from '../context/AuthContext'
 import { detectMFCategory } from '../utils/detection'
+
+const EQUITY_ASSET_CATS = new Set(['Stocks & Equities', 'Mutual Funds', 'Gold & Precious Metals', 'Cryptocurrency'])
 
 const CATS = {
   assets:      ASSET_CATS,
@@ -107,10 +110,14 @@ const PLACEHOLDER_NAME = {
   expenses:    'e.g. Rent / EMI',
 }
 
-const BROKERS = ['Zerodha','Groww','ICICI Direct','INDMoney','Aionion Capital','MF Central','Kuvera','HDFC Securities','Kotak Securities','Angel One','5Paisa','Upstox','NSDL/CDSL','EPFO','Post Office','SBI','HDFC Bank','Other']
+const BROKERS = ['Zerodha','Groww','ICICI Direct','INDMoney','Aionion Capital','MF Central','Kuvera','HDFC Securities','Kotak Securities','Angel One','5Paisa','Upstox','NSDL/CDSL','EPFO','Post Office','SBI','HDFC Bank','Interactive Brokers','Charles Schwab','Fidelity','Vanguard','Webull','Robinhood','Other']
+
+const US_INSTRUMENT_TYPES = ['Stock', 'ETF', 'MF']
+
+const roundMoney = (n) => Math.round(Number(n) * 100) / 100
 
 export default function EntryModal({ collection, item, onClose, onSaved }) {
-  const { addItem, updateItem, settings } = useFinance()
+  const { addItem, updateItem, settings, persistSettings } = useFinance()
   const { session } = useAuth()
   const isEdit     = Boolean(item?.id)
   const cats       = CATS[collection]
@@ -140,25 +147,64 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
     }
   }, [isAsset, session?.userId, item?.id])
 
+  const openAsUs = Boolean(item?._openAsUs)
+  const isStockCat = item?.category === 'Stocks & Equities' && !item?._isMF
+  const initialAssetCat = openAsUs ? 'Stocks & Equities' : (item?.category || cats[0])
+  const defaultUsdRate = settings?.usdInrRate != null && settings.usdInrRate > 0 ? String(settings.usdInrRate) : '83'
   const [form, setForm] = useState({
     name:          item?.name          || '',
-    category:      item?.category      || cats[0],
+    category:      initialAssetCat,
     value:         item?.value         || '',
     monthly:       item?.monthly       || '',
     institution:   item?.institution   || '',
     rate:          item?.rate          || '',
     dueDate:       item?.dueDate       || '',
-    note:          item?.note          || item?._sector || '',
+    note:          item?.note          || (isStockCat || (item?._isUS && item?.category === 'Mutual Funds') ? '' : (item?._sector || '')),
+    // `_sector`: stocks, US mutual funds, and other equity-like assets
+    sector:        EQUITY_ASSET_CATS.has(initialAssetCat) ? (item?._sector || '') : '',
     // Equity-specific fields
     qty:           item?._qty          || '',
     avgPrice:      item?._avgPrice     || '',
     investedValue: item?._investedValue|| '',
+    // US (USD-denominated) holdings
+    isUS:          Boolean(item?._isUS) || openAsUs,
+    usInstrumentType: item?._usInstrumentType || 'Stock',
+    avgUsd:        item?._avgPriceUsd != null && item._avgPriceUsd > 0 ? String(item._avgPriceUsd) : '',
+    currentUsd:    item?._currentPriceUsd != null && item._currentPriceUsd > 0 ? String(item._currentPriceUsd) : '',
+    usdInrRate:    item?._usdInrRate != null && item._usdInrRate > 0 ? String(item._usdInrRate) : defaultUsdRate,
   })
+  const [fxLoading, setFxLoading] = useState(false)
   const [goalName, setGoalName] = useState(initialGoalName || '')
   const [saving, setSaving]           = useState(false)
   const [autoSuggested, setAutoSuggested] = useState(false)
 
   const f = (k, v) => setForm(p => ({ ...p, [k]: v }))
+
+  const applyUsInrFromUsd = (p) => {
+    const q = parseFloat(p.qty) || 0
+    const avg = parseFloat(p.avgUsd) || 0
+    const cur = parseFloat(p.currentUsd) || 0
+    const r = parseFloat(p.usdInrRate) || 0
+    const next = { ...p }
+    if (q > 0 && avg > 0 && r > 0) next.investedValue = String(roundMoney(q * avg * r))
+    if (q > 0 && cur > 0 && r > 0) next.value = String(roundMoney(q * cur * r))
+    return next
+  }
+
+  const usF = (k, v) => setForm(p => applyUsInrFromUsd({ ...p, [k]: v }))
+
+  const refreshUsdInr = async () => {
+    setFxLoading(true)
+    try {
+      const rate = await fetchUsdInrRate()
+      setForm(p => applyUsInrFromUsd({ ...p, usdInrRate: String(roundMoney(rate)) }))
+      persistSettings({ ...settings, usdInrRate: rate })
+    } catch {
+      window.alert('Could not fetch USD→INR. Check your connection or enter a rate manually.')
+    } finally {
+      setFxLoading(false)
+    }
+  }
 
   // Keep goal selection in sync when switching between rows (edit -> edit)
   useEffect(() => {
@@ -168,18 +214,31 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
   // Derived: is this an equity-type asset?
   const isEquityCat = EQUITY_CATS.has(form.category)
   const isMF        = form.category === 'Mutual Funds'
+  const isStockEquity = form.category === 'Stocks & Equities' && !isMF
+  const isUsHolding =
+    Boolean(form.isUS) && (form.category === 'Stocks & Equities' || form.category === 'Mutual Funds')
   const isNpsCat    = !isCF && !isLiab && form.category === 'NPS'
   const isRealEstateCat = !isCF && !isLiab && form.category === 'Real Estate'
 
-  // Auto-calc invested value when qty × avgPrice changes (stocks/ETF-like only)
+  // US mutual fund (add only): auto-suggest fund category from name when sector is empty
   useEffect(() => {
-    if (!EQUITY_CATS.has(form.category) || isMF) return
+    if (!isEquityCat || !isUsHolding || !isMF || isEdit) return
+    setForm(p => {
+      if ((p.sector || '').trim()) return p
+      const d = detectMFCategory(p.name.trim())
+      return d ? { ...p, sector: d } : p
+    })
+  }, [form.name, isEquityCat, isUsHolding, isMF, isEdit])
+
+  // Auto-calc invested value when qty × avgPrice changes (Indian INR stocks/ETF only)
+  useEffect(() => {
+    if (!EQUITY_CATS.has(form.category) || isMF || isUsHolding) return
     const q = parseFloat(form.qty)
     const a = parseFloat(form.avgPrice)
     if (q > 0 && a > 0) {
       f('investedValue', String(Math.round(q * a * 100) / 100))
     }
-  }, [form.category, form.qty, form.avgPrice, isMF])
+  }, [form.category, form.qty, form.avgPrice, isMF, isUsHolding])
 
   // Auto-calc P&L %
   const invested = parseFloat(form.investedValue) || 0
@@ -187,20 +246,35 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
   const plPct    = invested > 0 && present > 0 ? ((present - invested) / invested * 100) : null
   const plAbs    = invested > 0 && present > 0 ? present - invested : null
 
-  // Auto-categorize + auto-detect sector on name change
+  // Auto-categorize + auto-detect sector on name change (add flow only)
   const handleNameChange = (v) => {
-    f('name', v)
-    if (isEdit) return
+    if (isEdit) {
+      f('name', v)
+      return
+    }
     const suggested = smartCategory(v, collection)
     if (suggested && cats.includes(suggested)) {
-      setForm(p => ({
-        ...p,
-        name:     v,
-        category: suggested,
-      }))
+      setForm(p => {
+        const auto = suggested === 'Stocks & Equities' && !(p.sector || '').trim()
+          ? detectSector(v.trim()) : ''
+        return {
+          ...p,
+          name: v,
+          category: suggested,
+          ...(auto ? { sector: auto } : {}),
+        }
+      })
       setAutoSuggested(true)
     } else {
-      setForm(p => ({ ...p, name: v }))
+      setForm(p => {
+        const auto = p.category === 'Stocks & Equities' && !(p.sector || '').trim()
+          ? detectSector(v.trim()) : ''
+        return {
+          ...p,
+          name: v,
+          ...(auto ? { sector: auto } : {}),
+        }
+      })
       setAutoSuggested(false)
     }
   }
@@ -212,14 +286,39 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
 
     const qty      = parseFloat(form.qty)      || 0
     const avgPrice = parseFloat(form.avgPrice) || 0
-    const invVal   = parseFloat(form.investedValue) || (qty > 0 && avgPrice > 0 ? qty * avgPrice : 0)
-    const presVal  = parseFloat(form.value) || 0
+    const isUsSave =
+      Boolean(form.isUS) && (form.category === 'Stocks & Equities' || form.category === 'Mutual Funds')
+    const avgUsdNum   = parseFloat(form.avgUsd) || 0
+    const curUsdNum   = parseFloat(form.currentUsd) || 0
+    const usdRateNum  = parseFloat(form.usdInrRate) || 0
+    const usInvComputed =
+      isUsSave && qty > 0 && avgUsdNum > 0 && usdRateNum > 0 ? roundMoney(qty * avgUsdNum * usdRateNum) : 0
+    const usPresComputed =
+      isUsSave && qty > 0 && curUsdNum > 0 && usdRateNum > 0 ? roundMoney(qty * curUsdNum * usdRateNum) : 0
+    let invVal = parseFloat(form.investedValue) || 0
+    let presVal = parseFloat(form.value) || 0
+    if (!isUsSave) {
+      invVal = invVal || (qty > 0 && avgPrice > 0 ? qty * avgPrice : 0)
+    } else {
+      if (!invVal && usInvComputed) invVal = usInvComputed
+      if (!presVal && usPresComputed) presVal = usPresComputed
+    }
     const plPctFin = invVal > 0 && presVal > 0 ? ((presVal - invVal) / invVal * 100) : null
     const newPresentValue = presVal || invVal
     const oldPresentValue = Number(item?.value) || 0
     const presentValueChanged =
       !isEdit ||
       Math.round(newPresentValue * 100) !== Math.round(oldPresentValue * 100)
+
+    const oldQty = Number(item?._qty) || 0
+    const oldAvgUsd = Number(item?._avgPriceUsd) || 0
+    const oldCurUsd = Number(item?._currentPriceUsd) || 0
+    const usPositionFieldsChanged =
+      isEdit &&
+      isUsSave &&
+      (Math.round(oldQty * 1e8) !== Math.round(qty * 1e8) ||
+        Math.round(oldAvgUsd * 10000) !== Math.round(avgUsdNum * 10000) ||
+        Math.round(oldCurUsd * 10000) !== Math.round(curUsdNum * 10000))
 
     const entryId = item?.id || uid()
     const entry = {
@@ -236,12 +335,33 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
       // Equity-specific metadata (only saved for equity/MF categories)
       ...(isEquityCat && {
         _qty:           qty,
-        _avgPrice:      avgPrice,
+        _avgPrice:      isUsSave ? 0 : avgPrice,
         _investedValue: invVal,
         _ltp:           qty > 0 && presVal > 0 ? Math.round(presVal / qty * 100) / 100 : 0,
         _plPct:         plPctFin,
         _isMF:          isMF,
-        _sector:        isMF ? detectMFCategory(form.name.trim()) : detectSector(form.name.trim()),
+        _sector:        isMF
+          ? (isUsSave
+            ? ((form.sector || '').trim() || detectMFCategory(form.name.trim()))
+            : detectMFCategory(form.name.trim()))
+          : (isStockEquity
+            ? ((form.sector || '').trim() || detectSector(form.name.trim()))
+            : detectSector(form.name.trim())),
+        ...(isUsSave
+          ? {
+              _isUS: true,
+              _usInstrumentType: form.usInstrumentType || 'Stock',
+              _avgPriceUsd:    avgUsdNum,
+              _currentPriceUsd: curUsdNum,
+              _usdInrRate:     usdRateNum,
+            }
+          : {
+              _isUS: false,
+              _usInstrumentType: '',
+              _avgPriceUsd:      0,
+              _currentPriceUsd:  0,
+              _usdInrRate:       0,
+            }),
       }),
       ...(isRealEstateCat && {
         _investedValue: invVal,
@@ -251,9 +371,9 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
         _investedValue: invVal,
         _plPct:         plPctFin,
       }),
-      // Present-value change timestamp only (remarks / other fields do not bump this)
+      // Timestamp: present value changes, or US qty / USD avg / USD current price changes
       ...(collection === 'assets' && {
-        _updatedDate: presentValueChanged
+        _updatedDate: (presentValueChanged || usPositionFieldsChanged)
           ? Date.now()
           : (item?._updatedDate ?? assetIdToTimestamp(item?.id) ?? Date.now()),
       }),
@@ -293,7 +413,7 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
   const title = `${isEdit ? 'Edit' : 'Add'} ${collection.charAt(0).toUpperCase() + collection.slice(1, -1)}`
 
   return (
-    <Modal title={title} onClose={onClose} wide={isLiab}>
+    <Modal title={title} onClose={onClose} wide={isLiab || (isAsset && isEquityCat && isUsHolding)}>
       <div>
 
         {/* Name */}
@@ -312,10 +432,45 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
             </div>
           )}
           <select className="input" value={form.category}
-            onChange={e => { f('category', e.target.value); setAutoSuggested(false) }}>
+            onChange={e => {
+              const c = e.target.value
+              setAutoSuggested(false)
+              setForm(p => {
+                if (!['Stocks & Equities', 'Mutual Funds'].includes(c))
+                  return { ...p, category: c, sector: '', isUS: false }
+                if (c !== 'Stocks & Equities')
+                  return { ...p, category: c, sector: '' }
+                let sector = p.sector
+                if (!(sector || '').trim() && p.name.trim()) {
+                  const d = detectSector(p.name.trim())
+                  if (d) sector = d
+                }
+                return { ...p, category: c, sector }
+              })
+            }}>
             {cats.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </Field>
+
+        {(form.category === 'Stocks & Equities' || form.category === 'Mutual Funds') && (
+          <Field label="Market">
+            <label style={{ display:'flex', alignItems:'center', gap:10, fontSize:13, color:'#4a4f6a', cursor:'pointer' }}>
+              <input type="checkbox" checked={Boolean(form.isUS)}
+                onChange={e => {
+                  const on = e.target.checked
+                  setForm(p => {
+                    const next = {
+                      ...p,
+                      isUS: on,
+                      usdInrRate: on ? (p.usdInrRate || defaultUsdRate) : p.usdInrRate,
+                    }
+                    return on ? applyUsInrFromUsd(next) : next
+                  })
+                }} />
+              <span>US market (USD prices — US stocks, ADRs, US ETFs / mutual funds). Values convert to INR for net worth.</span>
+            </label>
+          </Field>
+        )}
 
         {/* ── Equity / MF specific fields ─────────────────────────── */}
         {!isCF && !isLiab && isEquityCat && (
@@ -324,7 +479,7 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
               borderRadius:10, padding:'14px 16px', marginBottom:16 }}>
               <div style={{ fontSize:11, fontWeight:600, color:'#5b8ff9', letterSpacing:'0.05em',
                 textTransform:'uppercase', marginBottom:12 }}>
-                {isMF ? '📊 Fund Details' : '📈 Stock / ETF Details'}
+                {isUsHolding ? '🇺🇸 US holding (USD)' : isMF ? '📊 Fund Details' : '📈 Stock / ETF Details'}
               </div>
 
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
@@ -332,14 +487,20 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
                 <Field label={isMF ? 'Units' : 'Qty / Shares'}>
                   <div style={{ position:'relative' }}>
                     <input className="input" type="number" min="0" step="any"
-                      value={form.qty} onChange={e => f('qty', e.target.value)}
+                      value={form.qty} onChange={e => (isUsHolding ? usF('qty', e.target.value) : f('qty', e.target.value))}
                       placeholder={isMF ? 'e.g. 152.345' : 'e.g. 25'}
                       style={{ width:'100%', boxSizing:'border-box' }} />
                   </div>
                 </Field>
 
-                {/* Avg Buy Price (stocks/ETF only) */}
-                {!isMF && (
+                {isUsHolding ? (
+                  <Field label="Instrument type">
+                    <select className="input" value={form.usInstrumentType}
+                      onChange={e => f('usInstrumentType', e.target.value)}>
+                      {US_INSTRUMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </Field>
+                ) : !isMF ? (
                   <Field label="Avg Buy Price (₹)"
                     hint={form.qty && form.avgPrice ? `Invested: ${currSymbol}${Math.round(parseFloat(form.qty)*parseFloat(form.avgPrice)).toLocaleString('en-IN')}` : ''}>
                     <input className="input" type="number" min="0" step="any"
@@ -347,10 +508,53 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
                       placeholder="e.g. 1450.50"
                       style={{ width:'100%', boxSizing:'border-box' }} />
                   </Field>
+                ) : (
+                  <div />
                 )}
 
+                {isUsHolding ? (
+                  <>
+                    <Field label="Avg buy (USD / share or unit)"
+                      hint="Per-share or per-unit cost in US dollars">
+                      <div style={{ position:'relative' }}>
+                        <span style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)',
+                          color:'#8892b0', fontSize:13, pointerEvents:'none' }}>$</span>
+                        <input className="input" type="number" min="0" step="any"
+                          value={form.avgUsd} onChange={e => usF('avgUsd', e.target.value)}
+                          placeholder="e.g. 185.50"
+                          style={{ paddingLeft:22, width:'100%', boxSizing:'border-box' }} />
+                      </div>
+                    </Field>
+                    <Field label="Current price (USD / share or unit)">
+                      <div style={{ position:'relative' }}>
+                        <span style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)',
+                          color:'#8892b0', fontSize:13, pointerEvents:'none' }}>$</span>
+                        <input className="input" type="number" min="0" step="any"
+                          value={form.currentUsd} onChange={e => usF('currentUsd', e.target.value)}
+                          placeholder="e.g. 212.00"
+                          style={{ paddingLeft:22, width:'100%', boxSizing:'border-box' }} />
+                      </div>
+                    </Field>
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <Field label="USD → INR rate"
+                        hint="Used to convert USD prices to INR for invested and present value.">
+                        <div style={{ display:'flex', gap:8, alignItems:'stretch' }}>
+                          <input className="input" type="number" min="0" step="any"
+                            value={form.usdInrRate} onChange={e => usF('usdInrRate', e.target.value)}
+                            placeholder="e.g. 83.25"
+                            style={{ flex:1, minWidth:0 }} />
+                          <button type="button" className="btn btn-outline" disabled={fxLoading}
+                            onClick={refreshUsdInr} style={{ flexShrink:0, whiteSpace:'nowrap' }}>
+                            {fxLoading ? '…' : 'Fetch live'}
+                          </button>
+                        </div>
+                      </Field>
+                    </div>
+                  </>
+                ) : null}
+
                 {/* Invested Value — auto-filled or manual */}
-                <Field label="Invested Value (₹)" hint={isMF ? 'Enter total invested amount' : 'Auto-calculated from Qty × Avg Price'}>
+                <Field label="Invested Value (₹)" hint={isUsHolding ? 'Updates from Qty × Avg USD × rate; you can override manually.' : isMF ? 'Enter total invested amount' : 'Auto-calculated from Qty × Avg Price'}>
                   <div style={{ position:'relative' }}>
                     <span style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)',
                       color:'#8892b0', fontSize:13, pointerEvents:'none' }}>₹</span>
@@ -358,12 +562,12 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
                       value={form.investedValue} onChange={e => f('investedValue', e.target.value)}
                       placeholder="0"
                       style={{ paddingLeft:22, width:'100%', boxSizing:'border-box',
-                        background: (!isMF && form.qty && form.avgPrice) ? 'rgba(22,163,74,0.04)' : undefined }} />
+                        background: (!isMF && !isUsHolding && form.qty && form.avgPrice) ? 'rgba(22,163,74,0.04)' : undefined }} />
                   </div>
                 </Field>
 
                 {/* Present / Current Value */}
-                <Field label="Present Value (₹)" hint={plPct !== null ? `P&L: ${plPct >= 0 ? '+' : ''}${plPct.toFixed(2)}% (${plPct >= 0 ? '+' : ''}${currSymbol}${Math.round(Math.abs(plAbs)).toLocaleString('en-IN')})` : 'Current market value'}>
+                <Field label="Present Value (₹)" hint={plPct !== null ? `P&L: ${plPct >= 0 ? '+' : ''}${plPct.toFixed(2)}% (${plPct >= 0 ? '+' : ''}${currSymbol}${Math.round(Math.abs(plAbs)).toLocaleString('en-IN')})` : isUsHolding ? 'Updates from Qty × Current USD × rate; you can override.' : 'Current market value'}>
                   <div style={{ position:'relative' }}>
                     <span style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)',
                       color:'#8892b0', fontSize:13, pointerEvents:'none' }}>₹</span>
@@ -412,11 +616,23 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
               </datalist>
             </Field>
 
+            {/* Sector / fund category — saved as `_sector` (US stocks & US mutual funds) */}
+            {(isStockEquity || (isUsHolding && isMF)) && (
+              <Field label={isMF ? 'Fund category (optional)' : 'Sector / Industry (optional)'}
+                hint={isMF
+                  ? 'Auto-filled from the fund name when empty; override if needed (e.g. Large Cap, Index Fund).'
+                  : 'Leave blank to infer from the name on save, or set manually (e.g. Banking, Software & IT) if detection is wrong.'}>
+                <input className="input" value={form.sector} onChange={e => f('sector', e.target.value)}
+                  placeholder={isMF ? 'e.g. Index Fund, Large Cap' : 'e.g. Pharmaceuticals, Index / ETF'}
+                  onKeyDown={e => e.key === 'Enter' && handleSave()} />
+              </Field>
+            )}
+
             {/* Remarks field */}
             <Field label="Remarks (optional)"
-              hint={isMF ? 'e.g. Fund category - Large Cap, Mid Cap, ELSS, Hybrid' : form.category === 'Gold & Precious Metals' ? 'e.g. Gold, Silver, Platinum' : 'e.g. Sector - Banking, Software & IT, Pharmaceuticals'}>
+              hint={isMF ? 'e.g. Fund category - Large Cap, Mid Cap, ELSS, Hybrid' : form.category === 'Gold & Precious Metals' ? 'e.g. Gold, Silver, Platinum' : isStockEquity ? 'e.g. Dividend reinvestment, lot notes…' : 'e.g. Sector - Banking, Software & IT, Pharmaceuticals'}>
               <input className="input" value={form.note} onChange={e => f('note', e.target.value)}
-                placeholder={isMF ? 'e.g. Mid Cap Fund' : form.category === 'Gold & Precious Metals' ? 'e.g. Gold Coins' : 'e.g. IT Sector Stock'}
+                placeholder={isMF ? 'e.g. Mid Cap Fund' : form.category === 'Gold & Precious Metals' ? 'e.g. Gold Coins' : isStockEquity ? 'Optional notes (sector is set above)' : 'e.g. IT Sector Stock'}
                 onKeyDown={e => e.key === 'Enter' && handleSave()} />
             </Field>
 

@@ -15,6 +15,18 @@ export function formatCurrency(n, currencyCode = 'INR') {
   }
 }
 
+/** USD amounts for US holdings table / forms (2–4 dp). */
+export function formatUsdAmount(n) {
+  if (n == null || Number.isNaN(Number(n))) return '—'
+  const x = Number(n)
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  }).format(x)
+}
+
 export function formatCompact(n, currencyCode = 'INR') {
   const c = CURRENCIES.find(x => x.code === currencyCode) || CURRENCIES[0]
   const abs = Math.abs(n)
