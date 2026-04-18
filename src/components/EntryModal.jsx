@@ -5,6 +5,7 @@ import { CURRENCIES } from '../utils/constants'
 import { uid, assetIdToTimestamp } from '../utils/helpers'
 import { useFinance } from '../context/FinanceContext'
 import { useAuth } from '../context/AuthContext'
+import { detectMFCategory } from '../utils/detection'
 
 const CATS = {
   assets:      ASSET_CATS,
@@ -170,15 +171,15 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
   const isNpsCat    = !isCF && !isLiab && form.category === 'NPS'
   const isRealEstateCat = !isCF && !isLiab && form.category === 'Real Estate'
 
-  // Auto-calc invested value when qty × avgPrice changes (equity / MF / gold / crypto only)
+  // Auto-calc invested value when qty × avgPrice changes (stocks/ETF-like only)
   useEffect(() => {
-    if (!EQUITY_CATS.has(form.category)) return
+    if (!EQUITY_CATS.has(form.category) || isMF) return
     const q = parseFloat(form.qty)
     const a = parseFloat(form.avgPrice)
     if (q > 0 && a > 0) {
       f('investedValue', String(Math.round(q * a * 100) / 100))
     }
-  }, [form.category, form.qty, form.avgPrice])
+  }, [form.category, form.qty, form.avgPrice, isMF])
 
   // Auto-calc P&L %
   const invested = parseFloat(form.investedValue) || 0
@@ -240,7 +241,7 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
         _ltp:           qty > 0 && presVal > 0 ? Math.round(presVal / qty * 100) / 100 : 0,
         _plPct:         plPctFin,
         _isMF:          isMF,
-        _sector:        detectSector(form.name.trim()),
+        _sector:        isMF ? detectMFCategory(form.name.trim()) : detectSector(form.name.trim()),
       }),
       ...(isRealEstateCat && {
         _investedValue: invVal,
@@ -337,17 +338,19 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
                   </div>
                 </Field>
 
-                {/* Avg Buy Price / NAV */}
-                <Field label={isMF ? 'Avg NAV (₹)' : 'Avg Buy Price (₹)'}
-                  hint={form.qty && form.avgPrice ? `Invested: ${currSymbol}${Math.round(parseFloat(form.qty)*parseFloat(form.avgPrice)).toLocaleString('en-IN')}` : ''}>
-                  <input className="input" type="number" min="0" step="any"
-                    value={form.avgPrice} onChange={e => f('avgPrice', e.target.value)}
-                    placeholder="e.g. 1450.50"
-                    style={{ width:'100%', boxSizing:'border-box' }} />
-                </Field>
+                {/* Avg Buy Price (stocks/ETF only) */}
+                {!isMF && (
+                  <Field label="Avg Buy Price (₹)"
+                    hint={form.qty && form.avgPrice ? `Invested: ${currSymbol}${Math.round(parseFloat(form.qty)*parseFloat(form.avgPrice)).toLocaleString('en-IN')}` : ''}>
+                    <input className="input" type="number" min="0" step="any"
+                      value={form.avgPrice} onChange={e => f('avgPrice', e.target.value)}
+                      placeholder="e.g. 1450.50"
+                      style={{ width:'100%', boxSizing:'border-box' }} />
+                  </Field>
+                )}
 
                 {/* Invested Value — auto-filled or manual */}
-                <Field label="Invested Value (₹)" hint="Auto-calculated from Qty × Avg Price">
+                <Field label="Invested Value (₹)" hint={isMF ? 'Enter total invested amount' : 'Auto-calculated from Qty × Avg Price'}>
                   <div style={{ position:'relative' }}>
                     <span style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)',
                       color:'#8892b0', fontSize:13, pointerEvents:'none' }}>₹</span>
@@ -355,7 +358,7 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
                       value={form.investedValue} onChange={e => f('investedValue', e.target.value)}
                       placeholder="0"
                       style={{ paddingLeft:22, width:'100%', boxSizing:'border-box',
-                        background: form.qty && form.avgPrice ? 'rgba(22,163,74,0.04)' : undefined }} />
+                        background: (!isMF && form.qty && form.avgPrice) ? 'rgba(22,163,74,0.04)' : undefined }} />
                   </div>
                 </Field>
 
@@ -396,12 +399,17 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
 
             {/* Source / Broker */}
             <Field label="Source / Broker">
-              <select className="input" value={form.institution}
+              <input
+                className="input"
+                value={form.institution}
                 onChange={e => f('institution', e.target.value)}
-                style={{ width:'100%', boxSizing:'border-box' }}>
-                <option value="">Select broker…</option>
-                {BROKERS.map(b => <option key={b} value={b}>{b}</option>)}
-              </select>
+                placeholder="Select or type broker…"
+                list="broker-options"
+                style={{ width:'100%', boxSizing:'border-box' }}
+              />
+              <datalist id="broker-options">
+                {BROKERS.map(b => <option key={b} value={b} />)}
+              </datalist>
             </Field>
 
             {/* Remarks field */}

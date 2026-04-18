@@ -16,7 +16,7 @@ import { groupBy, formatCurrency, formatCompact } from '../utils/helpers'
 import { useAuth } from '../context/AuthContext'
 import { CURRENCIES } from '../utils/constants'
 import { ALL_CLASSES, CLASS_COLORS, ASSET_CLASS_MAP, mfClass, getAssetClass } from '../utils/assetClasses'
-import { detectSubCategory } from '../utils/detection'
+import { detectSubCategory, detectMFCategory, detectGoldType } from '../utils/detection'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DASHBOARD
@@ -213,6 +213,18 @@ export function Assets() {
   const cur    = settings.currency
   const fmt    = v => formatCurrency(v, cur)
   const groups = groupBy(data?.assets || [], 'category')
+  const resolveMFCategory = (a) => (
+    detectMFCategory(a?._sector || '') ||
+    detectMFCategory(a?.note || '') ||
+    detectMFCategory(a?.name || '') ||
+    ''
+  )
+  const resolveGoldCategory = (a) => (
+    detectGoldType(a?._sector || '') ||
+    detectGoldType(a?.note || '') ||
+    detectGoldType(a?.name || '') ||
+    ''
+  )
 
   const goalLookup = (() => {
     if (!session?.userId) return {}
@@ -318,7 +330,7 @@ export function Assets() {
         </div>
       )}
 
-      {/* Asset groups — ordered: Fixed income → Real Estate → Gold → MF → NPS → Stocks → Others */}
+      {/* Asset groups — ordered by holdings count (ascending) */}
       {(() => {
         const CAT_ORDER = [
           'PPF / EPF', 'SSA (Sukanya Samriddhi)', 'Fixed Deposits',
@@ -330,7 +342,9 @@ export function Assets() {
           'Stocks & Equities',
           'Cryptocurrency', 'Business Assets', 'Vehicles', 'Others',
         ]
-        return Object.entries(groups).sort(([a], [b]) => {
+        return Object.entries(groups).sort(([a, aItems], [b, bItems]) => {
+          const holdingsDiff = aItems.length - bItems.length
+          if (holdingsDiff !== 0) return holdingsDiff
           const ai = CAT_ORDER.indexOf(a), bi = CAT_ORDER.indexOf(b)
           if (ai === -1 && bi === -1) return a.localeCompare(b)
           if (ai === -1) return 1
@@ -415,7 +429,9 @@ export function Assets() {
                   : (cat === 'Mutual Funds' || cat === 'Gold & Precious Metals')
                   ? [{ key:'subCat', label:'Category', color:() => '#7c3aed',
                       render: r => {
-                        const v = (r._sector || '').trim() || detectSubCategory(r.name, cat) || ''
+                        const v = cat === 'Mutual Funds'
+                          ? (resolveMFCategory(r) || '')
+                          : (resolveGoldCategory(r) || '')
                         return v
                           ? <span style={{ fontSize:12 }}>{v}</span>
                           : <span style={{ color:'#d0d4e0' }}>—</span>
@@ -739,6 +755,7 @@ export function CashFlow() {
 // ═══════════════════════════════════════════════════════════════════════════════
 export function Analytics() {
   const { data, settings } = useFinance()
+  const { session } = useAuth()
   const totals = useTotals()
   const cur = settings.currency
   const fmts = v => formatCompact(v, cur)
@@ -760,6 +777,42 @@ export function Analytics() {
     { label: 'Emergency Fund',   value: `${emergencyMonths?.toFixed(1)}mo`, pct: Math.min(emergencyMonths / 6 * 100, 100), color: '#b8820e', good: emergencyMonths >= 6, bench: '≥ 6 months' },
   ]
 
+  const profile = (() => {
+    if (!session?.userId) return null
+    try {
+      return JSON.parse(localStorage.getItem(`wr_profile_${session.userId}`) || '{}')
+    } catch {
+      return null
+    }
+  })()
+  const profileGoals = Array.isArray(profile?.goals) ? profile.goals : []
+  const goalMap = (profile?._goalMap && typeof profile._goalMap === 'object') ? profile._goalMap : {}
+  const assetsById = Object.fromEntries((data?.assets || []).map(a => [a.id, a]))
+  const goalProgressData = profileGoals
+    .map((g, i) => {
+      const target = parseInt(g?.targetAmount) || 0
+      if (target <= 0) return null
+      const goalName = (g?.label || '').trim() || `Goal ${i + 1}`
+      const linkedValue = Math.round((goalMap[goalName] || [])
+        .map(id => assetsById[id])
+        .filter(Boolean)
+        .reduce((s, a) => s + (a.value || 0), 0))
+      const manualSaved = parseInt(g?.currentSaved) || 0
+      const achieved = Math.max(0, linkedValue > 0 ? linkedValue : manualSaved)
+      const cappedAchieved = Math.min(target, achieved)
+      const remaining = Math.max(0, target - cappedAchieved)
+      const pct = target > 0 ? Math.min(100, (cappedAchieved / target) * 100) : 0
+      return {
+        id: g?.id || `${goalName}-${i}`,
+        name: goalName,
+        target,
+        achieved: cappedAchieved,
+        remaining,
+        pct,
+      }
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.target - a.target)
   return (
     <div style={{ display: 'grid', gap: 20 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 14 }}>
@@ -820,6 +873,32 @@ export function Analytics() {
           </div>
         </div>
       </div>
+
+      {/* Goal-wise progress (from My Goals profile + linked assets) */}
+      {goalProgressData.length > 0 && (
+        <div className="card" style={{ padding: 24 }}>
+          <div style={{ marginBottom:18 }}>
+            <div>
+              <h3 className="section-heading">Goal-wise Progress</h3>
+              <div style={{ fontSize:12, color:'#8892b0', marginTop:4 }}>
+                Achieved vs remaining for {goalProgressData.length} goal{goalProgressData.length !== 1 ? 's' : ''}
+              </div>
+            </div>
+          </div>
+
+          <ResponsiveContainer width="100%" height={Math.max(220, goalProgressData.length * 56)}>
+            <BarChart data={goalProgressData} layout="vertical" margin={{ top: 8, right: 16, left: 16, bottom: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#eef0f8" />
+              <XAxis type="number" tick={{ fill:'#9098b8', fontSize:11 }} axisLine={false} tickLine={false} tickFormatter={v => fmts(v)} />
+              <YAxis type="category" dataKey="name" width={140} tick={{ fill:'#4a4f6a', fontSize:11 }} axisLine={false} tickLine={false} />
+              <Tooltip content={<ChartTooltip currency={cur} />} />
+              <Legend wrapperStyle={{ fontSize: 11, color: '#8892b0' }} />
+              <Bar dataKey="achieved" name="Achieved" stackId="goal" fill="#16a34a" radius={[3, 0, 0, 3]} />
+              <Bar dataKey="remaining" name="Remaining" stackId="goal" fill="#e2e8f0" radius={[0, 3, 3, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
 
       {/* Top holdings + High interest debt */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
@@ -1855,25 +1934,36 @@ export function Analytics() {
       })()}
 
       {/* ── Mutual Fund Analytics ────────────────────────────────────────── */}
-      {(data?.assets||[]).some(a => a._isMF) && (() => {
-        const mfAssets = (data?.assets||[]).filter(a => a._isMF)
+      {(() => {
+        const getGoldType = (asset) => (
+          detectGoldType(asset?._sector || '') ||
+          detectGoldType(asset?.note || '') ||
+          detectGoldType(asset?.name || '')
+        )
+        const isGoldSilverFundFoF = (asset) =>
+          asset?.category === 'Gold & Precious Metals' && getGoldType(asset) === 'Gold/Silver Fund'
+        const isGoldSilverEtf = (asset) => getGoldType(asset) === 'Gold/Silver ETF'
+        const isEligibleMFAsset = (asset) =>
+          (asset?._isMF && !isGoldSilverEtf(asset)) || isGoldSilverFundFoF(asset)
 
-        // Parse MF category from _sector / note field
-        // e.g. "Equity - Small Cap", "Hybrid - Arbitrage", "Others - Fund of Funds"
-        const parseMFCategory = (sector) => {
-          const s = (sector || '').toLowerCase()
-          if (s.includes('small cap'))            return 'Small Cap'
-          if (s.includes('mid cap'))              return 'Mid Cap'
-          if (s.includes('large cap'))            return 'Large Cap'
-          if (s.includes('multi cap') || s.includes('flexi cap') || s.includes('large & mid')) return 'Flexi / Multi Cap'
-          if (s.includes('elss') || s.includes('tax sav'))  return 'ELSS (Tax Saving)'
-          if (s.includes('arbitrage'))            return 'Arbitrage'
-          if (s.includes('hybrid') || s.includes('balanced') || s.includes('equity savings')) return 'Hybrid'
-          if (s.includes('debt') || s.includes('liquid') || s.includes('money market') || s.includes('overnight') || s.includes('ultra short') || s.includes('short dur') || s.includes('credit risk')) return 'Debt'
-          if (s.includes('gold') || s.includes('silver') || s.includes('commodity')) return 'Gold / Commodity'
-          if (s.includes('fund of fund') || s.includes('fof') || s.includes('overseas') || s.includes('international')) return 'Fund of Funds'
-          if (s.includes('index') || s.includes('nifty') || s.includes('sensex') || s.includes('etf')) return 'Index / ETF'
-          if (s.includes('equity'))               return 'Equity'
+        if (!(data?.assets || []).some(isEligibleMFAsset)) return null
+
+        const mfAssets = (data?.assets || []).filter(isEligibleMFAsset)
+
+        // Parse MF category strictly via mutual-fund category detector.
+        const parseMFCategory = (asset) => {
+          const mfCategory = (
+            detectMFCategory(asset?._sector || '') ||
+            detectMFCategory(asset?.note || '') ||
+            detectMFCategory(asset?.name || '')
+          )
+          if (mfCategory) return mfCategory
+          const goldType = (
+            detectGoldType(asset?._sector || '') ||
+            detectGoldType(asset?.note || '') ||
+            detectGoldType(asset?.name || '')
+          )
+          if (goldType === 'Gold/Silver Fund') return 'Commodity Fund'
           return 'Other'
         }
 
@@ -1881,22 +1971,29 @@ export function Analytics() {
           'Large Cap':        '#2563eb',
           'Mid Cap':          '#c8920a',
           'Small Cap':        '#16a34a',
-          'Flexi / Multi Cap':'#7c3aed',
-          'ELSS (Tax Saving)':'#0891b2',
+          'Flexi Cap':        '#7c3aed',
+          'Multi Cap':        '#a855f7',
+          'ELSS (Tax Saver)': '#0891b2',
           'Hybrid':           '#d97706',
           'Arbitrage':        '#8b5cf6',
-          'Debt':             '#6b7494',
-          'Gold / Commodity': '#b8820e',
-          'Fund of Funds':    '#059669',
-          'Index / ETF':      '#dc2626',
-          'Equity':           '#3b82f6',
+          'Balanced Advantage':'#fb923c',
+          'Equity Savings':   '#f59e0b',
+          'Debt Fund':        '#6b7494',
+          'Liquid / Overnight':'#0f766e',
+          'Commodity Fund':   '#b8820e',
+          'International':    '#059669',
+          'Thematic / Sectoral':'#dc2626',
+          'Index Fund':       '#3b82f6',
+          'Focused Fund':     '#14b8a6',
+          'Value / Contra':   '#9333ea',
+          'Multi Asset':      '#64748b',
           'Other':            '#9ca3af',
         }
 
         // Group MFs by category
         const catMap = {}
         mfAssets.forEach(a => {
-          const cat = parseMFCategory(a._sector || a.note || '')
+          const cat = parseMFCategory(a)
           if (!catMap[cat]) catMap[cat] = { funds: [], value: 0, invested: 0 }
           catMap[cat].funds.push(a)
           catMap[cat].value    += (a.value || 0)
@@ -1913,6 +2010,44 @@ export function Analytics() {
             plPct: d.invested > 0 ? ((d.value - d.invested) / d.invested * 100) : null,
             pct: totalMFVal > 0 ? (d.value / totalMFVal * 100) : 0,
             color: MF_CAT_COLORS[cat] || '#9ca3af',
+          }))
+          .sort((a, b) => b.value - a.value)
+
+        // High-level MF buckets (similar to Equity Market Cap style summary)
+        const HIGH_CAT_COLORS = {
+          'Equity Oriented': '#3b82f6',
+          'Hybrid': '#d97706',
+          'Debt': '#6b7494',
+          'Cash / Liquid': '#0f766e',
+          'Gold / Commodity': '#b8820e',
+          'International / FoF': '#059669',
+          'Other': '#9ca3af',
+        }
+        const toHighCategory = (cat) => {
+          if (['Large Cap','Mid Cap','Small Cap','Flexi Cap','Multi Cap','ELSS (Tax Saver)','Focused Fund','Value / Contra','Index Fund','Thematic / Sectoral'].includes(cat)) return 'Equity Oriented'
+          if (['Balanced Advantage','Hybrid','Arbitrage','Equity Savings','Multi Asset'].includes(cat)) return 'Hybrid'
+          if (cat === 'Debt Fund') return 'Debt'
+          if (cat === 'Liquid / Overnight') return 'Cash / Liquid'
+          if (cat === 'Commodity Fund') return 'Gold / Commodity'
+          if (cat === 'International') return 'International / FoF'
+          return 'Other'
+        }
+        const highMap = {}
+        mfCatData.forEach(c => {
+          const high = toHighCategory(c.cat)
+          if (!highMap[high]) highMap[high] = { value: 0, funds: 0, categories: 0, color: HIGH_CAT_COLORS[high] || '#9ca3af' }
+          highMap[high].value += c.value
+          highMap[high].funds += c.funds.length
+          highMap[high].categories += 1
+        })
+        const highCatData = Object.entries(highMap)
+          .map(([name, d]) => ({
+            name,
+            value: d.value,
+            funds: d.funds,
+            categories: d.categories,
+            pct: totalMFVal > 0 ? (d.value / totalMFVal * 100) : 0,
+            color: d.color,
           }))
           .sort((a, b) => b.value - a.value)
 
@@ -1945,6 +2080,33 @@ export function Analytics() {
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:24 }}>
               {/* Left: Category donut + list */}
               <div>
+                {/* High-level category allocation */}
+                <div style={{ marginBottom:18 }}>
+                  <div style={{ fontSize:11, color:'#8892b0', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:10 }}>
+                    High-level Fund Category Allocation
+                  </div>
+                  <div style={{ display:'grid', gridTemplateColumns:'160px 1fr', gap:12, alignItems:'center' }}>
+                    <ResponsiveContainer width="100%" height={150}>
+                      <PieChart>
+                        <Pie data={highCatData} cx="50%" cy="50%" innerRadius={28} outerRadius={54} dataKey="value" paddingAngle={1}>
+                          {highCatData.map((d, i) => <Cell key={i} fill={d.color} />)}
+                        </Pie>
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+                      {highCatData.map(h => (
+                        <div key={h.name} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8 }}>
+                          <div style={{ display:'flex', alignItems:'center', gap:6, minWidth:0 }}>
+                            <div style={{ width:8, height:8, borderRadius:'50%', background:h.color, flexShrink:0 }} />
+                            <span style={{ fontSize:11, color:'#1a1d2e', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{h.name}</span>
+                          </div>
+                          <span style={{ fontSize:11, fontFamily:"'JetBrains Mono',monospace", color:h.color, fontWeight:600 }}>{h.pct.toFixed(1)}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
                 <div style={{ fontSize:11, color:'#8892b0', fontWeight:500, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:12 }}>Category Allocation</div>
                 {/* Mini donut */}
                 <div style={{ display:'flex', justifyContent:'center', marginBottom:16 }}>

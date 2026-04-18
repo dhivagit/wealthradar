@@ -392,6 +392,7 @@ export default function ImportModal({ onClose, onImported }) {
     const plpctCands    = ['unrealized profit/loss %','unrealized p&l %','gain/loss %','p&l%','profit/loss %','return %']
     const sectorCands   = ['sector','industry','instrument type']
     const isinCands     = ['isin','isin code']
+    const instCands     = ['institution','broker','source','provider','platform','account']
 
     const allCands = [...nameCands,...valueCands,...ltpCands,...qtyCands,...avgCands,...sectorCands]
 
@@ -432,6 +433,7 @@ export default function ImportModal({ onClose, onImported }) {
     const investedIdx = colIdx(investedCands)
     const plpctIdx    = colIdx(plpctCands)
     const isinIdx     = colIdx(isinCands)
+    const instIdx     = colIdx(instCands)
 
     if (nameIdx === -1) return []
 
@@ -463,6 +465,7 @@ export default function ImportModal({ onClose, onImported }) {
     return rows.slice(headerIdx + 1)
       .map((row, i) => {
         const name   = (row[nameIdx]||'').trim().toUpperCase()
+        const rowInstitution = instIdx !== -1 ? (row[instIdx] || '').toString().trim() : ''
         const qty    = qtyIdx !== -1  ? parseFloat(row[qtyIdx]||0)  : 0
         const ltp    = ltpIdx !== -1  ? parseFloat(row[ltpIdx]||0)  : 0
         const avg    = avgIdx !== -1  ? parseFloat(row[avgIdx]||0)  : 0
@@ -527,7 +530,7 @@ export default function ImportModal({ onClose, onImported }) {
           name,
           value,
           category:       itemCat,
-          institution,
+          institution:     rowInstitution || institution || '',
           note:           autoSector,
           _sector:        autoSector,
           _qty:           qty,
@@ -585,7 +588,7 @@ export default function ImportModal({ onClose, onImported }) {
         if (!isMF && !isEquity && !isCombined && !isCSV && !isHoldings) continue
 
         const sheetCfg = {
-          institution: cfg.institution || broker,
+          institution: cfg.institution || cfg.label || broker,
           category:    effectiveIsMF ? 'Mutual Funds' : 'Stocks & Equities',
           isMF:        effectiveIsMF,
         }
@@ -636,7 +639,7 @@ export default function ImportModal({ onClose, onImported }) {
       name:        manualRow.name.trim(),
       value:       parseValue(manualRow.value),
       category:    manualRow.category || BROKERS[broker]?.category || ASSET_CATS[0],
-      institution: manualRow.institution.trim() || BROKERS[broker]?.institution || '',
+      institution: manualRow.institution.trim() || BROKERS[broker]?.institution || BROKERS[broker]?.label || '',
       note:        manualRow.note.trim() || 'Manually entered',
     }
     setParsed(p => [...p, item])

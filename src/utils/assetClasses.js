@@ -44,7 +44,7 @@ export function mfClass(text = '') {
   if (/liquid|overnight|money market|ultra short|cash fund/.test(n)) {
     return 'Cash'
   }
-  if (/debt|bond|gilt|banking psu|floater|credit risk|short dur|long dur|government|securities|fixed income/.test(n)) {
+  if (/debt|bond|gilt|banking psu|floater|credit risk|short dur|short term|long dur|government|securities|fixed income/.test(n)) {
     return 'Debt'
   }
   if (/gold|silver|commodity/.test(n)) {

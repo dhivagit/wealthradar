@@ -68,6 +68,14 @@ export function detectStockSector(name) {
 export function detectMFCategory(name) {
   const n = (name || '').toLowerCase()
   
+  // Keep these ahead of cap-based checks because some schemes include
+  // words like "large cap" in the full name but are still hybrid products.
+  if (/balanced advantage|\bbaf\b|dynamic asset/.test(n)) return 'Balanced Advantage'
+  if (/hybrid|aggressive hybrid|conservative hybrid/.test(n)) return 'Hybrid'
+  if (/arbitrage/.test(n)) return 'Arbitrage'
+  if (/equity.?savings/.test(n)) return 'Equity Savings'
+  if (/multi.?asset/.test(n)) return 'Multi Asset'
+
   if (/large.?cap/.test(n)) return 'Large Cap'
   if (/mid.?cap/.test(n)) return 'Mid Cap'
   if (/small.?cap/.test(n)) return 'Small Cap'
@@ -78,14 +86,8 @@ export function detectMFCategory(name) {
   if (/elss|tax.?saver/.test(n)) return 'ELSS (Tax Saver)'
   if (/index|nifty|sensex|sp500|nasdaq/.test(n)) return 'Index Fund'
   
-  if (/balanced advantage|baf|dynamic asset/.test(n)) return 'Balanced Advantage'
-  if (/hybrid|aggressive hybrid|conservative hybrid/.test(n)) return 'Hybrid'
-  if (/arbitrage/.test(n)) return 'Arbitrage'
-  if (/equity.?savings/.test(n)) return 'Equity Savings'
-  if (/multi.?asset/.test(n)) return 'Multi Asset'
-  
   if (/liquid|overnight|money market/.test(n)) return 'Liquid / Overnight'
-  if (/debt|bond|gilt|banking psu|corporate bond|dynamic bond|credit risk|short dur|low dur|ultra short/.test(n)) return 'Debt Fund'
+  if (/debt|bond|gilt|banking psu|corporate bond|dynamic bond|credit risk|short dur|short term|low dur|ultra short/.test(n)) return 'Debt Fund'
   
   if (/gold|silver|commodity/.test(n)) return 'Commodity Fund'
   if (/international|global|us equity|overseas|nasdaq|fang/.test(n)) return 'International'

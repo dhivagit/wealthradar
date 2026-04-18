@@ -1096,6 +1096,8 @@ export function FinancialPlanTab() {
   const [mapModal,     setMapModal]     = useState(null)   // goalName being mapped
   const [tempSelected, setTempSelected] = useState(new Set())  // asset selection in map modal
   const [linkedTooltip, setLinkedTooltip] = useState(null)  // index of goal showing linked assets tooltip
+  const [addGoalModal, setAddGoalModal] = useState(false)
+  const [newGoal, setNewGoal] = useState({ type:'home', label:'', targetAmount:'', targetYear:'', currentSaved:'0', priority:'high' })
 
   // ── Load saved data ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1294,6 +1296,38 @@ export function FinancialPlanTab() {
     setMapModal(null)
   }
 
+  const addGoalFromMyGoals = () => {
+    if (!profile) return
+    const rawTarget = parseInt(newGoal.targetAmount) || 0
+    const targetYear = parseInt(newGoal.targetYear) || 0
+    if (rawTarget <= 0 || targetYear < new Date().getFullYear()) return
+
+    const type = GOAL_TYPES.find(g => g.id === newGoal.type) || GOAL_TYPES.find(g => g.id === 'custom')
+    const years = targetYear - new Date().getFullYear()
+    const inflationRate = type?.inflationRate || 0
+    const inflatedTarget = calcInflatedTarget(rawTarget, years, inflationRate)
+    const returnRate = type?.returnRate || RETURN_RATES[type?.id || 'custom'] || 0.10
+    const goal = {
+      id: Date.now(),
+      ...newGoal,
+      targetYear: String(targetYear),
+      icon: type?.icon || '🎯',
+      label: (newGoal.label || type?.label || 'Custom Goal').trim(),
+      horizon: type?.horizon || 'medium',
+      inflationRate,
+      returnRate,
+      todayValue: rawTarget,
+      targetAmount: inflationRate > 0 ? inflatedTarget : rawTarget,
+      inflationAdjusted: inflationRate > 0,
+    }
+
+    const updatedProfile = { ...profile, goals: [...(profile.goals || []), goal] }
+    setProfile(updatedProfile)
+    persist(updatedProfile)
+    setAddGoalModal(false)
+    setNewGoal({ type:'home', label:'', targetAmount:'', targetYear:'', currentSaved:'0', priority:'high' })
+  }
+
   const s = plan.summary || {}
   const income = s.monthlyIncome || 0
   const SECTIONS = [
@@ -1375,6 +1409,9 @@ export function FinancialPlanTab() {
               <div style={{ fontSize:12, color:'#8892b0', marginTop:2 }}>Click any goal card to edit progress, saved amount, or target</div>
             </div>
             <div style={{ display:'flex', gap:10 }}>
+              <button className="btn btn-gold btn-sm" onClick={() => setAddGoalModal(true)}>
+                + Add Goal
+              </button>
               <div style={{ textAlign:'right' }}>
                 <div style={{ fontSize:10, color:'#8892b0' }}>Total Monthly SIP</div>
                 <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:16, fontWeight:700, color:'#c8920a' }}>₹{totalSIP.toLocaleString('en-IN')}/mo</div>
@@ -1718,6 +1755,56 @@ export function FinancialPlanTab() {
           })}
         </div>
             )}
+
+      {addGoalModal && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:2000, display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'20px 16px', overflowY:'auto' }}
+          onClick={() => setAddGoalModal(false)}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background:'#fff', borderRadius:16, width:'100%', maxWidth:640, maxHeight:'85vh', overflowY:'auto',
+              boxShadow:'0 20px 60px rgba(0,0,0,0.2)', padding:'20px 24px' }}>
+            <div style={{ fontSize:18, fontWeight:700, color:'#1a1d2e', marginBottom:20 }}>Add Financial Goal</div>
+            <Field label="Goal Type">
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(120px,1fr))', gap:8 }}>
+                {GOAL_TYPES.map(g => (
+                  <button key={g.id} onClick={() => setNewGoal(n => ({...n, type:g.id, label:g.label}))}
+                    style={{ padding:'9px 10px', borderRadius:10, cursor:'pointer', fontSize:12, fontWeight:500,
+                      background: newGoal.type===g.id ? 'rgba(200,146,10,0.1)' : '#f8f9fc',
+                      border:     newGoal.type===g.id ? '1.5px solid #c8920a' : '1px solid #eef0f8',
+                      color:      newGoal.type===g.id ? '#c8920a' : '#6b7494' }}>
+                    {g.icon} {g.label}
+                  </button>
+                ))}
+              </div>
+            </Field>
+            <Field label="Goal Name (optional)">
+              <PfInput value={newGoal.label} onChange={v => setNewGoal(n=>({...n,label:v}))} placeholder={GOAL_TYPES.find(g=>g.id===newGoal.type)?.label} />
+            </Field>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+              <Field label="Target Amount">
+                <PfInput value={newGoal.targetAmount} onChange={v => setNewGoal(n=>({...n,targetAmount:v}))} prefix="₹" type="number" placeholder="0" />
+              </Field>
+              <Field label="Target Year">
+                <PfInput value={newGoal.targetYear} onChange={v => setNewGoal(n=>({...n,targetYear:v}))} placeholder={String(new Date().getFullYear()+5)} type="number" />
+              </Field>
+              <Field label="Already Saved">
+                <PfInput value={newGoal.currentSaved} onChange={v => setNewGoal(n=>({...n,currentSaved:v}))} prefix="₹" type="number" placeholder="0" />
+              </Field>
+              <Field label="Priority">
+                <PfSelect value={newGoal.priority} onChange={v => setNewGoal(n=>({...n,priority:v}))}
+                  options={[{v:'high',l:'High'},{v:'medium',l:'Medium'},{v:'low',l:'Low'}]} />
+              </Field>
+            </div>
+            <div style={{ display:'flex', gap:10, marginTop:20 }}>
+              <button className="btn btn-outline" style={{ flex:1 }} onClick={() => setAddGoalModal(false)}>Cancel</button>
+              <button className="btn btn-gold" style={{ flex:1 }}
+                onClick={addGoalFromMyGoals}
+                disabled={(parseInt(newGoal.targetAmount) || 0) <= 0 || (parseInt(newGoal.targetYear) || 0) < new Date().getFullYear()}>
+                Add Goal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── PROTECTION SECTION ────────────────────────────────────────────────── */}
       {activeSection === 'protection' && (() => {
