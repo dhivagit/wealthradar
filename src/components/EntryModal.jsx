@@ -6,7 +6,7 @@ import { uid, assetIdToTimestamp } from '../utils/helpers'
 import { fetchUsdInrRate } from '../utils/fx'
 import { useFinance } from '../context/FinanceContext'
 import { useAuth } from '../context/AuthContext'
-import { detectMFCategory } from '../utils/detection'
+import { detectMFCategory, detectSubCategory } from '../utils/detection' // Assuming this is also used in EntryModal
 
 const EQUITY_ASSET_CATS = new Set(['Stocks & Equities', 'Mutual Funds', 'Gold & Precious Metals', 'Cryptocurrency'])
 
@@ -116,7 +116,9 @@ const US_INSTRUMENT_TYPES = ['Stock', 'ETF', 'MF']
 
 const roundMoney = (n) => Math.round(Number(n) * 100) / 100
 
-export default function EntryModal({ collection, item, onClose, onSaved }) {
+const SECTOR_INPUT_ID = 'sector-input'
+
+export default function EntryModal({ collection, item, onClose, onSaved, existingSectors = [] }) { // Receive _existingSectors
   const { addItem, updateItem, settings, persistSettings } = useFinance()
   const { session } = useAuth()
   const isEdit     = Boolean(item?.id)
@@ -125,6 +127,15 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
   const isLiab     = collection === 'liabilities'
   const currSymbol = CURRENCIES.find(c => c.code === settings.currency)?.symbol || '₹'
   const isAsset    = collection === 'assets'
+
+  // de-duplicated / sorted sector suggestions (for datalist)
+  const existingSectorOptions = useMemo(() => {
+    try {
+      return Array.from(new Set((existingSectors || []).filter(Boolean))).sort((a,b) => a.localeCompare(b))
+    } catch {
+      return []
+    }
+  }, [existingSectors])
 
   // ── Goals mapping (stored in wr_profile_<userId> as _goalMap) ───────────────
   const { goalOptions, initialGoalName } = useMemo(() => {
@@ -229,6 +240,18 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
       return d ? { ...p, sector: d } : p
     })
   }, [form.name, isEquityCat, isUsHolding, isMF, isEdit])
+
+  // Auto-detect sector if it's a new US holding and no sector is set
+  useEffect(() => {
+    const isNewUsHolding = !isEdit && isUsHolding;
+    if (isNewUsHolding && !form.sector && form.name) {
+      const detectedSector = detectSubCategory(form.name, form.category || 'Stocks & Equities');
+      if (detectedSector) {
+        f('sector', detectedSector);
+      }
+    }
+  }, [isUsHolding, form.name, form.category, form.sector, isEdit]);
+
 
   // Auto-calc invested value when qty × avgPrice changes (Indian INR stocks/ETF only)
   useEffect(() => {
@@ -617,14 +640,21 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
             </Field>
 
             {/* Sector / fund category — saved as `_sector` (US stocks & US mutual funds) */}
-            {(isStockEquity || (isUsHolding && isMF)) && (
+            {(isEquityCat && (isStockEquity || isUsHolding || isMF)) && (
               <Field label={isMF ? 'Fund category (optional)' : 'Sector / Industry (optional)'}
                 hint={isMF
-                  ? 'Auto-filled from the fund name when empty; override if needed (e.g. Large Cap, Index Fund).'
-                  : 'Leave blank to infer from the name on save, or set manually (e.g. Banking, Software & IT) if detection is wrong.'}>
+                  ? 'Auto-filled from the fund name when empty; override if needed (e.g. Large Cap, Index Fund). Select from existing sectors or type a new one.'
+                  : 'Leave blank to infer from the name on save, or set manually (e.g. Banking, Software & IT) if detection is wrong. Select from existing sectors or type a new one.'}>
                 <input className="input" value={form.sector} onChange={e => f('sector', e.target.value)}
                   placeholder={isMF ? 'e.g. Index Fund, Large Cap' : 'e.g. Pharmaceuticals, Index / ETF'}
-                  onKeyDown={e => e.key === 'Enter' && handleSave()} />
+                  onKeyDown={e => e.key === 'Enter' && handleSave()}
+                  list="existing-sectors-options"
+                  style={{ width:'100%', boxSizing:'border-box' }} />
+                <datalist id="existing-sectors-options">
+                  {existingSectorOptions.map((sector) => (
+                    <option key={sector} value={sector} />
+                  ))}
+                </datalist>
               </Field>
             )}
 
@@ -857,3 +887,5 @@ export default function EntryModal({ collection, item, onClose, onSaved }) {
     </Modal>
   )
 }
+
+

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar,
   PieChart, Pie, Cell, RadialBarChart, RadialBar,
@@ -253,8 +253,15 @@ export function Assets() {
     'ICICI Direct':'🔴','INDMoney':'🟠',
   }
 
+  // Function to get unique sectors from existing assets
+  const getExistingSectors = () => {
+    const sectors = new Set(data?.assets.flatMap(a => [a._sector, a.note]).filter(Boolean));
+    return Array.from(sectors).sort();
+  };
+
+
   const refreshUsdInrAcrossHoldings = useCallback(async () => {
-    setUsFxBusy(true)
+    setUsdFxBusy(true)
     try {
       const rate = await fetchUsdInrRate()
       persistSettings({ ...settings, usdInrRate: rate })
@@ -282,9 +289,59 @@ export function Assets() {
     } catch {
       window.alert('Could not fetch USD→INR. Check your connection or set the rate in Settings.')
     } finally {
-      setUsFxBusy(false)
+      setUsdFxBusy(false)
     }
   }, [batchUpdateCollection, data?.assets, persistSettings, settings])
+
+  // Combine domestic asset groups and US holdings into a single list for sorting
+  const allAssetGroups = []
+
+  // Add domestic asset groups
+  Object.entries(groups).forEach(([cat, items]) => {
+    allAssetGroups.push({
+      type: 'domestic',
+      name: cat,
+      items: items,
+      holdingsCount: items.length,
+      totalValue: items.reduce((s, x) => s + x.value, 0)
+    });
+  });
+
+  // Add US holdings group
+  if (usAssets.length > 0) {
+    allAssetGroups.push({
+      type: 'us',
+      name: 'US holdings',
+      items: usAssets, // Keep original usAssets here, sorting will be applied to this within its DataTable
+      holdingsCount: usAssets.length,
+      totalValue: usAssets.reduce((s, x) => s + (x.value || 0), 0)
+    });
+  }
+
+  // Sort all asset groups based on holdings count (ascending) and then by CAT_ORDER
+  const CAT_ORDER = [
+    'PPF / EPF', 'SSA (Sukanya Samriddhi)', 'Fixed Deposits',
+    'Bonds & Debentures', 'Cash & Equivalents',
+    'Real Estate',
+    'Gold & Precious Metals',
+    'Mutual Funds',
+    'NPS',
+    'Stocks & Equities',
+    'Cryptocurrency', 'Business Assets', 'Vehicles', 'Others',
+    'US holdings', // Add US holdings to the category order
+  ];
+
+  allAssetGroups.sort((a, b) => {
+    const holdingsDiff = a.holdingsCount - b.holdingsCount;
+    if (holdingsDiff !== 0) return holdingsDiff;
+
+    const ai = CAT_ORDER.indexOf(a.name);
+    const bi = CAT_ORDER.indexOf(b.name);
+    if (ai === -1 && bi === -1) return a.name.localeCompare(b.name);
+    if (ai === -1) return 1;
+    if (bi === -1) return -1;
+    return ai - bi;
+  });
 
   return (
     <div>
@@ -306,11 +363,11 @@ export function Assets() {
             style={{ color:'#c8953a', borderColor:'rgba(200,146,10,0.35)', gap:8 }}>
             📥 Import from Broker / Bank
           </button>
-          <button className="btn btn-outline" onClick={() => setModal({ collection:'assets', item: { _openAsUs: true } })}
+          <button className="btn btn-outline" onClick={() => setModal({ collection:'assets', item: { _openAsUs: true }, _existingSectors: getExistingSectors() })}
             style={{ borderColor:'rgba(99,102,241,0.35)', color:'#4f46e5' }}>
             + Add US holding
           </button>
-          <button className="btn btn-gold" onClick={() => setModal({ collection:'assets', item:null })}>
+          <button className="btn btn-gold" onClick={() => setModal({ collection:'assets', item:null, _existingSectors: getExistingSectors() })}>
             + Add Asset
           </button>
         </div>
@@ -374,345 +431,329 @@ export function Assets() {
         </div>
       )}
 
-      {/* US holdings — shown as a separate section table (similar to other asset tables) */}
-      {usAssets.length > 0 && (() => {
-        const usTotal = usAssets.reduce((s, r) => s + (r.value || 0), 0)
-        return (
-          <div className="card" style={{ marginBottom:16, overflow:'hidden' }}>
-            <div style={{ padding:'14px 20px', borderBottom:'1px solid #eef0f8', display:'flex', justifyContent:'space-between', alignItems:'flex-start', background:'#f8f9fc', flexWrap:'wrap', gap:8 }}>
-              <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-                <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                  <span className="tag tag-asset">US holdings</span>
-                  <span style={{ fontSize:12, color:'#8892b0' }}>{usAssets.length} holding{usAssets.length !== 1 ? 's' : ''}</span>
-                </div>
-                {(() => {
-                  const tsList = usAssets
-                    .map(r => r._updatedDate || assetIdToTimestamp(r.id))
-                    .filter(t => t != null && Number.isFinite(t))
-                  const mostRecent = tsList.length ? Math.max(...tsList) : null
-                  const formatted = mostRecent
-                    ? new Date(mostRecent).toLocaleDateString('en-IN', { year:'numeric', month:'short', day:'numeric' })
-                    : null
-                  return formatted ? (
-                    <span style={{ fontSize:11, color:'#6b7494', fontStyle:'italic' }}>Updated: {formatted}</span>
-                  ) : null
-                })()}
-                <span style={{ fontSize:11, color:'#6b7494', fontStyle:'italic' }}>
-                  USD inputs shown below; totals use INR conversion per row. Default USD→INR for new rows: {settings?.usdInrRate != null ? Number(settings.usdInrRate).toFixed(2) : '—'}
-                </span>
-              </div>
-              <div style={{ display:'flex', alignItems:'center', gap:14, flexWrap:'wrap' }}>
-                <span style={{ fontSize:12, color:'#8892b0' }}>{totalAssets > 0 ? ((usTotal / totalAssets) * 100).toFixed(1) : 0}% of portfolio</span>
-                <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:14, color:'#c8920a', fontWeight:600 }}>{fmt(usTotal)}</span>
-                <button type="button" className="btn btn-outline" disabled={usFxBusy}
-                  onClick={refreshUsdInrAcrossHoldings}>
-                  {usFxBusy ? 'Fetching…' : 'Refresh default USD→INR'}
-                </button>
-              </div>
-            </div>
+      {/* Render all asset groups (US and domestic) in sorted order */}
+      {allAssetGroups.map(group => {
+        const items = group.items;
+        const cat = group.name; // Use 'cat' for consistency in rendering logic
 
-            <DataTable currency={cur}
-              cols={[
-                { key:'name', label:'Name' },
-                { key:'subCat', label:'Category', color:() => '#6b7494',
-                  render: r => (
-                    <span style={{ fontSize:12 }}>
-                      {r.category === 'Mutual Funds' ? 'Mutual Funds (US)' : 'Stocks & Equities (US)'}
-                    </span>
-                  )},
-                { key:'sector', label:'Sector', color:() => '#6b7494',
-                  render: r => {
-                    const v = r.category === 'Mutual Funds'
-                      ? (resolveMFCategory(r) || '')
-                      : ((r._sector || '').trim() || detectSubCategory(r.name, 'Stocks & Equities') || '')
-                    return v
-                      ? <span style={{ fontSize:12 }}>{v}</span>
+        if (group.type === 'us') {
+          // Render US holdings section
+          const usTotal = group.totalValue;
+          return (
+            <div key="us-holdings-section" className="card" style={{ marginBottom:16, overflow:'hidden' }}>
+              <div style={{ padding:'14px 20px', borderBottom:'1px solid #eef0f8', display:'flex', justifyContent:'space-between', alignItems:'flex-start', background:'#f8f9fc', flexWrap:'wrap', gap:8 }}>
+                <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                    <span className="tag tag-asset">US holdings</span>
+                    <span style={{ fontSize:12, color:'#8892b0' }}>{items.length} holding{items.length !== 1 ? 's' : ''}</span>
+                  </div>
+                  {(() => {
+                    const tsList = items
+                      .map(r => r._updatedDate || assetIdToTimestamp(r.id))
+                      .filter(t => t != null && Number.isFinite(t))
+                    const mostRecent = tsList.length ? Math.max(...tsList) : null
+                    const formatted = mostRecent
+                      ? new Date(mostRecent).toLocaleDateString('en-IN', { year:'numeric', month:'short', day:'numeric' })
+                      : null
+                    return formatted ? (
+                      <span style={{ fontSize:11, color:'#6b7494', fontStyle:'italic' }}>Updated: {formatted}</span>
+                    ) : null
+                  })()}
+                  <span style={{ fontSize:11, color:'#6b7494', fontStyle:'italic' }}>
+                    USD inputs shown below; totals use INR conversion per row. Default USD→INR for new rows: {settings?.usdInrRate != null ? Number(settings.usdInrRate).toFixed(2) : '—'}
+                  </span>
+                </div>
+                <div style={{ display:'flex', alignItems:'center', gap:14, flexWrap:'wrap' }}>
+                  <span style={{ fontSize:12, color:'#8892b0' }}>{totalAssets > 0 ? ((usTotal / totalAssets) * 100).toFixed(1) : 0}% of portfolio</span>
+                  <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:14, color:'#c8920a', fontWeight:600 }}>{fmt(usTotal)}</span>
+                  <button type="button" className="btn btn-outline" disabled={usFxBusy}
+                    onClick={refreshUsdInrAcrossHoldings}>
+                    {usFxBusy ? 'Fetching…' : 'Refresh default USD→INR'}
+                  </button>
+                </div>
+              </div>
+
+              <DataTable currency={cur}
+                cols={[
+                  { key:'name', label:'Name' },
+                  { key:'subCat', label:'Category', color:() => '#6b7494',
+                    render: r => (
+                      <span style={{ fontSize:12 }}>
+                        {r.category === 'Mutual Funds' ? 'Mutual Funds (US)' : 'Stocks & Equities (US)'}
+                      </span>
+                    )},
+                  { key:'sector', label:'Sector', color:() => '#6b7494',
+                    render: r => {
+                      const v = r.category === 'Mutual Funds'
+                        ? (resolveMFCategory(r) || '')
+                        : ((r._sector || '').trim() || detectSubCategory(r.name, 'Stocks & Equities') || '')
+                      return v
+                        ? <span style={{ fontSize:12 }}>{v}</span>
+                        : <span style={{ color:'#d0d4e0' }}>—</span>
+                    }},
+                  { key:'institution', label:'Source',
+                    render: r => (
+                      <span style={{ color:'#8892b0', fontSize:12 }}>
+                        {r.institution || '—'}
+                      </span>
+                    )},
+                  { key:'_qty', label:'Qty/Units', right:true,
+                    render: r => r._qty > 0
+                      ? <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:'#4a4f6a' }}>{Number(r._qty).toLocaleString('en-US', { maximumFractionDigits: 6 })}</span>
                       : <span style={{ color:'#d0d4e0' }}>—</span>
-                  }},
-                { key:'institution', label:'Source',
-                  render: r => (
-                    <span style={{ color:'#8892b0', fontSize:12 }}>
-                      {r.institution || '—'}
-                    </span>
-                  )},
-                { key:'_qty', label:'Qty/Units', right:true,
-                  render: r => r._qty > 0
-                    ? <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:'#4a4f6a' }}>{Number(r._qty).toLocaleString('en-US', { maximumFractionDigits: 6 })}</span>
-                    : <span style={{ color:'#d0d4e0' }}>—</span>
-                },
-                { key:'avgUsd', label:'Avg Buy (USD)', right:true,
-                  render: r => <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:'#4a4f6a' }}>{formatUsdAmount(r._avgPriceUsd)}</span> },
-                { key:'curUsd', label:'Current (USD)', right:true,
-                  render: r => <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:'#4a4f6a' }}>{formatUsdAmount(r._currentPriceUsd)}</span> },
-                { key:'fx', label:'USD→INR', right:true,
-                  render: r => <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:'#8892b0' }}>{r._usdInrRate ? Number(r._usdInrRate).toFixed(2) : '—'}</span> },
-                { key:'_investedValue', label:'Invested', right:true,
-                  render: (r,c) => r._investedValue > 0
-                    ? <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:'#8892b0' }}>{formatCurrency(r._investedValue, c)}</span>
-                    : <span style={{ color:'#d0d4e0' }}>—</span>
-                },
-                { key:'value', label:'Present Value', right:true, mono:true,
-                  render:(r,c) => <span style={{ color:'#c8920a', fontWeight:500 }}>{formatCurrency(r.value || 0, c)}</span> },
-                ...((usAssets.some(r => r._plPct !== undefined && r._plPct !== null)) ? [{
-                  key:'_plPct', label:'P&L %', right:true,
-                  render: r => {
-                    const pct = r._plPct
-                    if (pct === undefined || pct === null) return <span style={{ color:'#d0d4e0' }}>—</span>
-                    const col = pct >= 0 ? '#16a34a' : '#dc2626'
-                    const prefix = pct >= 0 ? '+' : ''
-                    return (
-                      <div style={{ textAlign:'right' }}>
-                        <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, fontWeight:600,
-                          color:col, background: pct >= 0 ? 'rgba(22,163,74,0.08)' : 'rgba(220,38,38,0.07)',
-                          padding:'2px 8px', borderRadius:10, display:'inline-block' }}>
-                          {prefix}{Number(pct).toFixed(2)}%
-                        </div>
-                      </div>
-                    )
                   },
-                }] : []),
-                { key:'alloc', label:'Allocation', right:true,
-                  render: r => (
-                    <div style={{ minWidth:72 }}>
-                      <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:3 }}>
-                        <span style={{ fontSize:11, fontFamily:"'JetBrains Mono',monospace", color:'#8892b0' }}>
-                          {totalAssets > 0 ? (((r.value || 0) / totalAssets) * 100).toFixed(1) : 0}%
-                        </span>
-                      </div>
-                      <ProgressBar pct={totalAssets > 0 ? ((r.value || 0) / totalAssets) * 100 : 0} color="#c8953a" height={3} />
-                    </div>
-                  )},
-                { key:'goal', label:'Goal',
-                  render: r => {
-                    const g = goalLookup[r.id]
-                    return g ? (
-                      <span style={{ fontSize:12, color:'#4a4f6a', maxWidth:160, display:'inline-block', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }} title={g}>
-                        {g}
-                      </span>
-                    ) : <span style={{ color:'#d0d4e0' }}>—</span>
-                  }},
-                { key:'remarks', label:'Remarks',
-                  render: r => {
-                    const nt = (r.note || '').trim()
-                    return (
-                      <span style={{
-                        fontSize:12, color:'#6b7494', display:'block', maxWidth:320,
-                        whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', lineHeight:1.45,
-                      }}>
-                        {nt || '—'}
-                      </span>
-                    )
-                  }},
-              ]}
-              rows={usAssets}
-              onEdit={item => setModal({ collection:'assets', item })}
-              onDelete={id => deleteItem('assets', id)}
-            />
-          </div>
-        )
-      })()}
-
-      {/* Asset groups — ordered by holdings count (ascending) */}
-      {(() => {
-        const CAT_ORDER = [
-          'PPF / EPF', 'SSA (Sukanya Samriddhi)', 'Fixed Deposits',
-          'Bonds & Debentures', 'Cash & Equivalents',
-          'Real Estate',
-          'Gold & Precious Metals',
-          'Mutual Funds',
-          'NPS',
-          'Stocks & Equities',
-          'Cryptocurrency', 'Business Assets', 'Vehicles', 'Others',
-        ]
-        return Object.entries(groups).sort(([a, aItems], [b, bItems]) => {
-          const holdingsDiff = aItems.length - bItems.length
-          if (holdingsDiff !== 0) return holdingsDiff
-          const ai = CAT_ORDER.indexOf(a), bi = CAT_ORDER.indexOf(b)
-          if (ai === -1 && bi === -1) return a.localeCompare(b)
-          if (ai === -1) return 1
-          if (bi === -1) return -1
-          return ai - bi
-        })
-      })().map(([cat, items]) => {
-        const catTotal = items.reduce((s, x) => s + x.value, 0)
-        return (
-          <div key={cat} className="card" style={{ marginBottom:16, overflow:'hidden' }}>
-            <div style={{ padding:'14px 20px', borderBottom:'1px solid #eef0f8', display:'flex', justifyContent:'space-between', alignItems:'flex-start', background:'#f8f9fc', flexWrap:'wrap', gap:8 }}>
-              <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-                <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                  <span className="tag tag-asset">{cat}</span>
-                  <span style={{ fontSize:12, color:'#8892b0' }}>{items.length} holding{items.length !== 1 ? 's' : ''}</span>
-                </div>
-                {(() => {
-                  const mostRecentDate = Math.max(...items.map(r => r._updatedDate || parseInt(r.id.split('_')[0])))
-                  const dateObj = new Date(mostRecentDate)
-                  const formattedDate = dateObj.toLocaleDateString('en-IN', { year:'numeric', month:'short', day:'numeric' })
-                  return (
-                    <span style={{ fontSize:11, color:'#6b7494', fontStyle:'italic' }}>Updated: {formattedDate}</span>
-                  )
-                })()}
-              </div>
-              <div style={{ display:'flex', alignItems:'center', gap:14, flexWrap:'wrap' }}>
-                {(cat === 'Real Estate' || items.some(r => r._investedValue > 0)) && (() => {
-                  const catInvested = items.reduce((s,r) => s + (r._investedValue||0), 0)
-                  const catPL       = catTotal - catInvested
-                  const catPLPct    = catInvested > 0 ? (catPL / catInvested) * 100 : null
-                  const plCol       = catPLPct >= 0 ? '#16a34a' : '#dc2626'
-                  return (
-                    <span style={{ display:'flex', alignItems:'center', gap:8 }}>
-                      <span style={{ fontSize:11, color:'#8892b0', fontFamily:"'JetBrains Mono',monospace" }}>inv: {fmt(catInvested)}</span>
-                      {catPLPct !== null && (
-                        <span style={{ fontSize:11, fontFamily:"'JetBrains Mono',monospace", fontWeight:600, color:plCol,
-                          background: catPLPct >= 0 ? 'rgba(22,163,74,0.09)' : 'rgba(220,38,38,0.08)',
-                          padding:'2px 9px', borderRadius:10 }}>
-                          {catPLPct >= 0 ? '+' : ''}{catPLPct.toFixed(1)}%
-                        </span>
-                      )}
-                    </span>
-                  )
-                })()}
-                <span style={{ fontSize:12, color:'#8892b0' }}>{totalAssets > 0 ? ((catTotal/totalAssets)*100).toFixed(1) : 0}% of portfolio</span>
-                <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:14, color:'#c8920a', fontWeight:600 }}>{fmt(catTotal)}</span>
-              </div>
-            </div>
-            <DataTable currency={cur}
-              cols={[
-                { key:'name',  label:'Name' },
-                // NPS → Equity; Real Estate → own badge; debt-style categories → Debt badge; MF/Gold → sub-type; else sector
-                ...(cat === 'NPS'
-                  ? [{ key:'npsClass', label:'Category', render: r => {
-                      const detail = (r._sector || '').trim()
+                  { key:'avgUsd', label:'Avg Buy (USD)', right:true,
+                    render: r => <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:'#4a4f6a' }}>{formatUsdAmount(r._avgPriceUsd)}</span> },
+                  { key:'curUsd', label:'Current (USD)', right:true,
+                    render: r => <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:'#4a4f6a' }}>{formatUsdAmount(r._currentPriceUsd)}</span> },
+                  { key:'fx', label:'USD→INR', right:true,
+                    render: r => <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:'#8892b0' }}>{r._usdInrRate ? Number(r._usdInrRate).toFixed(2) : '—'}</span> },
+                  { key:'_investedValue', label:'Invested', right:true,
+                    render: (r,c) => r._investedValue > 0
+                      ? <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:'#8892b0' }}>{formatCurrency(r._investedValue, c)}</span>
+                      : <span style={{ color:'#d0d4e0' }}>—</span>
+                  },
+                  { key:'value', label:'Present Value', right:true, mono:true,
+                    render:(r,c) => <span style={{ color:'#c8920a', fontWeight:500 }}>{formatCurrency(r.value || 0, c)}</span> },
+                  ...((items.some(r => r._plPct !== undefined && r._plPct !== null)) ? [{
+                    key:'_plPct', label:'P&L %', right:true,
+                    render: r => {
+                      const pct = r._plPct
+                      if (pct === undefined || pct === null) return <span style={{ color:'#d0d4e0' }}>—</span>
+                      const col = pct >= 0 ? '#16a34a' : '#dc2626'
+                      const prefix = pct >= 0 ? '+' : ''
                       return (
-                        <div style={{ display:'flex', flexDirection:'column', gap:4, alignItems:'flex-start' }}>
-                          <span style={{ fontSize:11, fontWeight:600, color:'#2563eb',
-                            background:'rgba(37,99,235,0.1)', padding:'2px 10px', borderRadius:20 }}>
-                            Equity
-                          </span>
-                          {detail
-                            ? <span style={{ fontSize:11, color:'#6b7494', maxWidth:200 }} title={detail}>{detail}</span>
-                            : null}
+                        <div style={{ textAlign:'right' }}>
+                          <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, fontWeight:600,
+                            color:col, background: pct >= 0 ? 'rgba(22,163,74,0.08)' : 'rgba(220,38,38,0.07)',
+                            padding:'2px 8px', borderRadius:10, display:'inline-block' }}>
+                            {prefix}{Number(pct).toFixed(2)}%
+                          </div>
                         </div>
                       )
-                    } }]
-                  : cat === 'Real Estate'
-                  ? [{ key:'reClass', label:'Category', render: () => (
-                      <span style={{ fontSize:11, fontWeight:600, color:'#c2410c',
-                        background:'rgba(234,88,12,0.08)', padding:'2px 10px', borderRadius:20, whiteSpace:'nowrap' }}>
-                        Real Estate
-                      </span>
-                    ) }]
-                  : (['PPF / EPF','SSA (Sukanya Samriddhi)','Fixed Deposits','Bonds & Debentures','Cash & Equivalents','Vehicles','Business Assets'].includes(cat))
-                  ? [{ key:'category', label:'Category', render: () => (
-                      <span style={{ fontSize:11, fontWeight:600, color:'#059669',
-                        background:'rgba(5,150,105,0.08)', padding:'2px 10px', borderRadius:20 }}>
-                        Debt
-                      </span>
-                    )}]
-                  : (cat === 'Mutual Funds' || cat === 'Gold & Precious Metals')
-                  ? [{ key:'subCat', label:'Category', color:() => '#7c3aed',
-                      render: r => {
-                        const v = cat === 'Mutual Funds'
-                          ? (resolveMFCategory(r) || '')
-                          : (resolveGoldCategory(r) || '')
-                        return v
-                          ? <span style={{ fontSize:12 }}>{v}</span>
-                          : <span style={{ color:'#d0d4e0' }}>—</span>
-                      } }]
-                  : [{ key:'subCat', label:'Sector', color:() => '#6b7494',
-                      render: r => {
-                        const v = (r._sector || '').trim() || detectSubCategory(r.name, cat) || ''
-                        return v
-                          ? <span style={{ fontSize:12 }}>{v}</span>
-                          : <span style={{ color:'#d0d4e0' }}>—</span>
-                      } }]),
-                { key:'institution', label:'Source',
-                  render: r => (
-                    <span style={{ color:'#8892b0', fontSize:12 }}>
-                      {r.institution || '—'}
-                    </span>
-                  )},
-                ...(items.some(r => r._qty > 0) ? [{
-                  key:'_qty', label: items.some(r => r._isMF) && items.some(r => !r._isMF) ? 'Qty/Units' : items.some(r => r._isMF) ? 'Units' : 'Qty',
-                  right:true,
-                  render: r => r._qty > 0
-                    ? <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:'#4a4f6a' }}>{Number(r._qty).toLocaleString()}</span>
-                    : <span style={{ color:'#d0d4e0' }}>—</span>
-                }] : []),
-                ...((cat === 'Real Estate' || items.some(r => r._investedValue > 0)) ? [{
-                  key:'_investedValue', label:'Invested', right:true,
-                  render: (r,c) => r._investedValue > 0
-                    ? <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:'#8892b0' }}>{formatCurrency(r._investedValue, c)}</span>
-                    : <span style={{ color:'#d0d4e0' }}>—</span>
-                }] : []),
-                { key:'value', label: cat === 'Bonds & Debentures' ? 'Invested Value' : 'Present Value', right:true, mono:true,
-                  render:(r,c) => <span style={{ color:'#c8920a', fontWeight:500 }}>{formatCurrency(r.value, c)}</span> },
-                ...((cat === 'Real Estate' || items.some(r => r._plPct !== undefined && r._plPct !== null)) ? [{
-                  key:'_plPct', label:'P&L %', right:true,
-                  render: r => {
-                    const pct = r._plPct
-                    if (pct === undefined || pct === null) return <span style={{ color:'#d0d4e0' }}>—</span>
-                    const col    = pct >= 0 ? '#16a34a' : '#dc2626'
-                    const prefix = pct >= 0 ? '+' : ''
-                    const plAbs  = (r._investedValue > 0) ? (r.value - r._investedValue) : null
-                    return (
-                      <div style={{ textAlign:'right' }}>
-                        <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, fontWeight:600,
-                          color:col, background: pct >= 0 ? 'rgba(22,163,74,0.08)' : 'rgba(220,38,38,0.07)',
-                          padding:'2px 8px', borderRadius:10, display:'inline-block' }}>
-                          {prefix}{Number(pct).toFixed(2)}%
+                    },
+                  }] : []),
+                  { key:'alloc', label:'Allocation', right:true,
+                    render: r => (
+                      <div style={{ minWidth:72 }}>
+                        <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:3 }}>
+                          <span style={{ fontSize:11, fontFamily:"'JetBrains Mono',monospace", color:'#8892b0' }}>
+                            {totalAssets > 0 ? (((r.value || 0) / totalAssets) * 100).toFixed(1) : 0}%
+                          </span>
                         </div>
-                        {plAbs !== null && (
-                          <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:10, color:col, marginTop:2, opacity:0.75 }}>
-                            {prefix}{formatCurrency(Math.abs(plAbs), 'INR')}
-                          </div>
-                        )}
+                        <ProgressBar pct={totalAssets > 0 ? ((r.value || 0) / totalAssets) * 100 : 0} color="#c8953a" height={3} />
                       </div>
-                    )
-                  }
-                }] : []),
-                { key:'alloc', label:'Allocation', right:true,
-                  render: r => (
-                    <div style={{ minWidth:72 }}>
-                      <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:3 }}>
-                        <span style={{ fontSize:11, fontFamily:"'JetBrains Mono',monospace", color:'#8892b0' }}>
-                          {totalAssets > 0 ? ((r.value/totalAssets)*100).toFixed(1) : 0}%
+                    )},
+                  { key:'goal', label:'Goal',
+                    render: r => {
+                      const g = goalLookup[r.id]
+                      return g ? (
+                        <span style={{ fontSize:12, color:'#4a4f6a', maxWidth:160, display:'inline-block', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }} title={g}>
+                          {g}
                         </span>
-                      </div>
-                      <ProgressBar pct={totalAssets > 0 ? (r.value/totalAssets)*100 : 0} color="#c8953a" height={3} />
-                    </div>
-                  )},
-                { key:'goal', label:'Goal',
-                  render: r => {
-                    const g = goalLookup[r.id]
-                    return g ? (
-                      <span style={{ fontSize:12, color:'#4a4f6a', maxWidth:160, display:'inline-block', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }} title={g}>
-                        {g}
-                      </span>
-                    ) : <span style={{ color:'#d0d4e0' }}>—</span>
-                  }},
-                { key:'remarks', label:'Remarks',
-                  render: r => {
-                    const nt = (r.note || '').trim()
+                      ) : <span style={{ color:'#d0d4e0' }}>—</span>
+                    }},
+                  { key:'remarks', label:'Remarks',
+                    render: r => {
+                      const nt = (r.note || '').trim()
+                      return (
+                        <span style={{
+                          fontSize:12, color:'#6b7494', display:'block', maxWidth:320,
+                          whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', lineHeight:1.45,
+                        }}>
+                          {nt || '—'}
+                        </span>
+                      )
+                    }},
+                ]}
+                rows={items} // US assets already stored in 'items' for this group
+                onEdit={item => setModal({ collection:'assets', item, _existingSectors: getExistingSectors() })} // Pass existing sectors to modal
+                onDelete={id => deleteItem('assets', id)}
+              />
+            </div>
+          );
+        } else {
+          // Render domestic asset groups
+          const catTotal = group.totalValue;
+          return (
+            <div key={cat} className="card" style={{ marginBottom:16, overflow:'hidden' }}>
+              <div style={{ padding:'14px 20px', borderBottom:'1px solid #eef0f8', display:'flex', justifyContent:'space-between', alignItems:'flex-start', background:'#f8f9fc', flexWrap:'wrap', gap:8 }}>
+                <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                    <span className="tag tag-asset">{cat}</span>
+                    <span style={{ fontSize:12, color:'#8892b0' }}>{items.length} holding{items.length !== 1 ? 's' : ''}</span>
+                  </div>
+                  {(() => {
+                    const mostRecentDate = Math.max(...items.map(r => r._updatedDate || parseInt(r.id.split('_')[0])))
+                    const dateObj = new Date(mostRecentDate)
+                    const formattedDate = dateObj.toLocaleDateString('en-IN', { year:'numeric', month:'short', day:'numeric' })
                     return (
-                      <span style={{
-                        fontSize:12, color:'#6b7494', display:'block', maxWidth:320,
-                        whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', lineHeight:1.45,
-                      }}>
-                        {nt || '—'}
+                      <span style={{ fontSize:11, color:'#6b7494', fontStyle:'italic' }}>Updated: {formattedDate}</span>
+                    )
+                  })()}
+                </div>
+                <div style={{ display:'flex', alignItems:'center', gap:14, flexWrap:'wrap' }}>
+                  {(cat === 'Real Estate' || items.some(r => r._investedValue > 0)) && (() => {
+                    const catInvested = items.reduce((s,r) => s + (r._investedValue||0), 0)
+                    const catPL       = catTotal - catInvested
+                    const catPLPct    = catInvested > 0 ? (catPL / catInvested) * 100 : null
+                    const plCol       = catPLPct >= 0 ? '#16a34a' : '#dc2626'
+                    return (
+                      <span style={{ display:'flex', alignItems:'center', gap:8 }}>
+                        <span style={{ fontSize:11, color:'#8892b0', fontFamily:"'JetBrains Mono',monospace" }}>inv: {fmt(catInvested)}</span>
+                        {catPLPct !== null && (
+                          <span style={{ fontSize:11, fontFamily:"'JetBrains Mono',monospace", fontWeight:600, color:plCol,
+                            background: catPLPct >= 0 ? 'rgba(22,163,74,0.09)' : 'rgba(220,38,38,0.08)',
+                            padding:'2px 9px', borderRadius:10 }}>
+                            {catPLPct >= 0 ? '+' : ''}{catPLPct.toFixed(1)}%
+                          </span>
+                        )}
                       </span>
                     )
-                  }},
-              ]}
-              rows={items}
-              onEdit={item => setModal({ collection:'assets', item })}
-              onDelete={id => deleteItem('assets', id)}
-            />
-          </div>
-        )
+                  })()}
+                  <span style={{ fontSize:12, color:'#8892b0' }}>{totalAssets > 0 ? ((catTotal/totalAssets)*100).toFixed(1) : 0}% of portfolio</span>
+                  <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:14, color:'#c8920a', fontWeight:600 }}>{fmt(catTotal)}</span>
+                </div>
+              </div>
+              <DataTable currency={cur}
+                cols={[
+                  { key:'name',  label:'Name' },
+                  // NPS → Equity; Real Estate → own badge; debt-style categories → Debt badge; MF/Gold → sub-type; else sector
+                  ...(cat === 'NPS'
+                    ? [{ key:'npsClass', label:'Category', render: r => {
+                        const detail = (r._sector || '').trim()
+                        return (
+                          <div style={{ display:'flex', flexDirection:'column', gap:4, alignItems:'flex-start' }}>
+                            <span style={{ fontSize:11, fontWeight:600, color:'#2563eb',
+                              background:'rgba(37,99,235,0.1)', padding:'2px 10px', borderRadius:20 }}>
+                              Equity
+                            </span>
+                            {detail
+                              ? <span style={{ fontSize:11, color:'#6b7494', maxWidth:200 }} title={detail}>{detail}</span>
+                              : null}
+                          </div>
+                        )
+                      } }]
+                    : cat === 'Real Estate'
+                    ? [{ key:'reClass', label:'Category', render: () => (
+                        <span style={{ fontSize:11, fontWeight:600, color:'#c2410c',
+                          background:'rgba(234,88,12,0.08)', padding:'2px 10px', borderRadius:20, whiteSpace:'nowrap' }}>
+                          Real Estate
+                        </span>
+                      ) }]
+                    : (['PPF / EPF','SSA (Sukanya Samriddhi)','Fixed Deposits','Bonds & Debentures','Cash & Equivalents','Vehicles','Business Assets'].includes(cat))
+                    ? [{ key:'category', label:'Category', render: () => (
+                        <span style={{ fontSize:11, fontWeight:600, color:'#059669',
+                          background:'rgba(5,150,105,0.08)', padding:'2px 10px', borderRadius:20 }}>
+                          Debt
+                        </span>
+                      )}]
+                    : (cat === 'Mutual Funds' || cat === 'Gold & Precious Metals')
+                    ? [{ key:'subCat', label:'Category', color:() => '#7c3aed',
+                        render: r => {
+                          const v = cat === 'Mutual Funds'
+                            ? (resolveMFCategory(r) || '')
+                            : (resolveGoldCategory(r) || '')
+                          return v
+                            ? <span style={{ fontSize:12 }}>{v}</span>
+                            : <span style={{ color:'#d0d4e0' }}>—</span>
+                        } }]
+                    : [{ key:'subCat', label:'Sector', color:() => '#6b7494',
+                        render: r => {
+                          const v = (r._sector || '').trim() || detectSubCategory(r.name, cat) || ''
+                          return v
+                            ? <span style={{ fontSize:12 }}>{v}</span>
+                            : <span style={{ color:'#d0d4e0' }}>—</span>
+                        } }]),
+                  { key:'institution', label:'Source',
+                    render: r => (
+                      <span style={{ color:'#8892b0', fontSize:12 }}>
+                        {r.institution || '—'}
+                      </span>
+                    )},
+                  ...(items.some(r => r._qty > 0) ? [{
+                    key:'_qty', label: items.some(r => r._isMF) && items.some(r => !r._isMF) ? 'Qty/Units' : items.some(r => r._isMF) ? 'Units' : 'Qty',
+                    right:true,
+                    render: r => r._qty > 0
+                      ? <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:'#4a4f6a' }}>{Number(r._qty).toLocaleString()}</span>
+                      : <span style={{ color:'#d0d4e0' }}>—</span>
+                  }] : []),
+                  ...((cat === 'Real Estate' || items.some(r => r._investedValue > 0)) ? [{
+                    key:'_investedValue', label:'Invested', right:true,
+                    render: (r,c) => r._investedValue > 0
+                      ? <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, color:'#8892b0' }}>{formatCurrency(r._investedValue, c)}</span>
+                      : <span style={{ color:'#d0d4e0' }}>—</span>
+                  }] : []),
+                  { key:'value', label: cat === 'Bonds & Debentures' ? 'Invested Value' : 'Present Value', right:true, mono:true,
+                    render:(r,c) => <span style={{ color:'#c8920a', fontWeight:500 }}>{formatCurrency(r.value, c)}</span> },
+                  ...((cat === 'Real Estate' || items.some(r => r._plPct !== undefined && r._plPct !== null)) ? [{
+                    key:'_plPct', label:'P&L %', right:true,
+                    render: r => {
+                      const pct = r._plPct
+                      if (pct === undefined || pct === null) return <span style={{ color:'#d0d4e0' }}>—</span>
+                      const col    = pct >= 0 ? '#16a34a' : '#dc2626'
+                      const prefix = pct >= 0 ? '+' : ''
+                      const plAbs  = (r._investedValue > 0) ? (r.value - r._investedValue) : null
+                      return (
+                        <div style={{ textAlign:'right' }}>
+                          <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, fontWeight:600,
+                            color:col, background: pct >= 0 ? 'rgba(22,163,74,0.08)' : 'rgba(220,38,38,0.07)',
+                            padding:'2px 8px', borderRadius:10, display:'inline-block' }}>
+                            {prefix}{Number(pct).toFixed(2)}%
+                          </div>
+                          {plAbs !== null && (
+                            <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:10, color:col, marginTop:2, opacity:0.75 }}>
+                              {prefix}{formatCurrency(Math.abs(plAbs), 'INR')}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    }
+                  }] : []),
+                  { key:'alloc', label:'Allocation', right:true,
+                    render: r => (
+                      <div style={{ minWidth:72 }}>
+                        <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:3 }}>
+                          <span style={{ fontSize:11, fontFamily:"'JetBrains Mono',monospace", color:'#8892b0' }}>
+                            {totalAssets > 0 ? ((r.value/totalAssets)*100).toFixed(1) : 0}%
+                          </span>
+                        </div>
+                        <ProgressBar pct={totalAssets > 0 ? (r.value/totalAssets)*100 : 0} color="#c8953a" height={3} />
+                      </div>
+                    )},
+                  { key:'goal', label:'Goal',
+                    render: r => {
+                      const g = goalLookup[r.id]
+                      return g ? (
+                        <span style={{ fontSize:12, color:'#4a4f6a', maxWidth:160, display:'inline-block', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }} title={g}>
+                          {g}
+                        </span>
+                      ) : <span style={{ color:'#d0d4e0' }}>—</span>
+                    }},
+                  { key:'remarks', label:'Remarks',
+                    render: r => {
+                      const nt = (r.note || '').trim()
+                      return (
+                        <span style={{
+                          fontSize:12, color:'#6b7494', display:'block', maxWidth:320,
+                          whiteSpace:'normal', wordBreak:'break-word', overflowWrap:'anywhere', lineHeight:1.45,
+                        }}>
+                          {nt || '—'}
+                        </span>
+                      )
+                    }},
+                ]}
+                rows={items}
+                onEdit={item => setModal({ collection:'assets', item, _existingSectors: getExistingSectors() })}
+                onDelete={id => deleteItem('assets', id)}
+              />
+            </div>
+          )
+        }
       })}
 
       {/* Modals */}
-      {modal && <EntryModal collection={modal.collection} item={modal.item} onClose={() => setModal(null)} />}
+      {modal && <EntryModal collection={modal.collection} item={modal.item} existingSectors={modal._existingSectors} onClose={() => setModal(null)} />}
       {importModal && (
         <ImportModal
           onClose={() => setImportModal(false)}
@@ -942,8 +983,8 @@ export function Analytics() {
   const cur = settings.currency
   const fmts = v => formatCompact(v, cur)
   const fmt  = v => formatCurrency(v, cur)
-  const [activeSector, setActiveSector] = useState(null)   // drill-down: selected sector name
-  const [activeMcap,   setActiveMcap]   = useState(null)   // drill-down: selected market cap
+  const [activeSector, setActiveSector]   = useState(null)   // drill-down: selected sector name
+  const [activeMcap,   setActiveMcap]     = useState(null)   // drill-down: selected market cap
 
   const { totalAssets, fiPct, fiNumber, monthlyInterest, avgNW, maxNW, savingsRate, debtRatio, emergencyMonths } = totals
 
@@ -2061,15 +2102,17 @@ export function Analytics() {
                     const risk = smallPct > 60 ? 'High' : smallPct > 35 ? 'Moderate' : 'Conservative'
                     const riskColor = { High:'#dc2626', Moderate:'#d97706', Conservative:'#16a34a' }[risk]
                     return (
-                      <div style={{ marginTop:8, padding:'12px 14px', background:'#f8f9fc', borderRadius:10, border:'1px solid #eef0f8' }}>
-                        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
-                          <span style={{ fontSize:12, color:'#4a4f6a', fontWeight:500 }}>Portfolio Risk Profile</span>
-                          <span style={{ fontSize:12, fontWeight:700, color:riskColor,
-                            background: riskColor + '14', padding:'2px 10px', borderRadius:20 }}>
-                            {risk}
+                      <div style={{ marginTop: 8, padding: '12px 14px', background: '#f8f9fc', borderRadius: 10, border: '1px solid #eef0f8' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                          <span style={{ fontSize: 12, color: '#4a4f6a', fontWeight: 500 }}>Portfolio Risk Profile</span>
+                          <span style={{
+                            fontSize: 12, fontWeight: 700, color: riskColor,
+                            background: riskColor + '14', padding: '2px 10px', borderRadius: 20
+                          }}>
+                            { risk }
                           </span>
                         </div>
-                        <div style={{ fontSize:11, color:'#8892b0', lineHeight:1.5 }}>
+                        <div style={{ fontSize: 11, color: '#8892b0', lineHeight: 1.5 }}>
                           {risk === 'High' && 'Heavy small/mid cap tilt. Higher return potential but higher volatility.'}
                           {risk === 'Moderate' && 'Balanced mix. Good growth potential with manageable risk.'}
                           {risk === 'Conservative' && 'Large cap heavy. Stable returns with lower volatility.'}
@@ -2607,7 +2650,7 @@ export function Settings({ onToast }) {
       note:    toTitleCase(a.note    || ''),
       _sector: toTitleCase(a._sector || ''),
     }))
-    const changed = fixed.filter((a, i) => a.note !== data.assets[i].note || a._sector !== data.assets[i]._sector).length
+    const changed = fixed.filter((a, i) => a.note !== data.assets[i].note || a._sector !== data.assets[i].sector).length
     batchUpdateCollection('assets', fixed)
     onToast(changed > 0 ? `Fixed casing on ${changed} holdings` : 'All sector names already correct', 'success')
   }
