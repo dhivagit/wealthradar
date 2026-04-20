@@ -211,7 +211,7 @@ export function Assets() {
   const [modal,        setModal]        = useState(null)
   const [importModal,  setImportModal]  = useState(false)
   const [importToast,  setImportToast]  = useState(null)
-  const [usFxBusy,     setUsFxBusy]     = useState(false)
+  const [usdFxBusy,    setUsdFxBusy]    = useState(false)
   const cur    = settings.currency
   const fmt    = v => formatCurrency(v, cur)
   const domesticAssets = (data?.assets || []).filter(a => !a._isUS)
@@ -261,19 +261,43 @@ export function Assets() {
 
 
   const refreshUsdInrAcrossHoldings = useCallback(async () => {
+    console.log('📍 refreshUsdInrAcrossHoldings called')
     setUsdFxBusy(true)
     try {
+      console.log('🌐 Fetching USD→INR rate...')
       const rate = await fetchUsdInrRate()
+      console.log('✅ Rate fetched:', rate)
+      
+      if (!rate || rate < 70 || rate > 150) {
+        throw new Error(`Invalid rate received: ${rate}`)
+      }
+      
+      // Persist the new rate to settings
+      console.log('💾 Persisting rate to settings...')
       persistSettings({ ...settings, usdInrRate: rate })
 
+      // Update all US assets with new FX rate and recalculate invested/present values
+      console.log('📊 Updating US assets...')
       const nextAssets = (data?.assets || []).map(asset => {
         if (!asset?._isUS) return asset
+        
         const qty = Number(asset?._qty) || 0
         const avgUsd = Number(asset?._avgPriceUsd) || 0
         const curUsd = Number(asset?._currentPriceUsd) || 0
-        const invested = qty > 0 && avgUsd > 0 ? Math.round(qty * avgUsd * rate * 100) / 100 : (Number(asset?._investedValue) || 0)
-        const present = qty > 0 && curUsd > 0 ? Math.round(qty * curUsd * rate * 100) / 100 : (Number(asset?.value) || 0)
-        const plPct = invested > 0 && present > 0 ? ((present - invested) / invested) * 100 : null
+        
+        // Recalculate INR values using the new rate
+        const invested = qty > 0 && avgUsd > 0 
+          ? Math.round(qty * avgUsd * rate * 100) / 100 
+          : (Number(asset?._investedValue) || 0)
+        const present = qty > 0 && curUsd > 0 
+          ? Math.round(qty * curUsd * rate * 100) / 100 
+          : (Number(asset?.value) || 0)
+        
+        // Recalculate P&L percentage
+        const plPct = invested > 0 && present > 0 
+          ? ((present - invested) / invested) * 100 
+          : null
+        
         return {
           ...asset,
           _usdInrRate: rate,
@@ -285,10 +309,14 @@ export function Assets() {
         }
       })
 
+      console.log('🔄 Batch updating collection...')
       batchUpdateCollection('assets', nextAssets)
-    } catch {
-      window.alert('Could not fetch USD→INR. Check your connection or set the rate in Settings.')
+      console.log(`✅ USD→INR rate updated to ₹${rate.toFixed(2)}. All US holdings refreshed.`)
+    } catch (err) {
+      console.error('❌ Refresh USD→INR error:', err)
+      window.alert(`Could not fetch live USD→INR rate.\n\n${err.message}\n\nPlease check your internet connection or manually set the rate in Settings.`)
     } finally {
+      console.log('✔️ Setting usdFxBusy to false')
       setUsdFxBusy(false)
     }
   }, [batchUpdateCollection, data?.assets, persistSettings, settings])
@@ -466,9 +494,9 @@ export function Assets() {
                 <div style={{ display:'flex', alignItems:'center', gap:14, flexWrap:'wrap' }}>
                   <span style={{ fontSize:12, color:'#8892b0' }}>{totalAssets > 0 ? ((usTotal / totalAssets) * 100).toFixed(1) : 0}% of portfolio</span>
                   <span style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:14, color:'#c8920a', fontWeight:600 }}>{fmt(usTotal)}</span>
-                  <button type="button" className="btn btn-outline" disabled={usFxBusy}
+                  <button type="button" className="btn btn-outline" disabled={usdFxBusy}
                     onClick={refreshUsdInrAcrossHoldings}>
-                    {usFxBusy ? 'Fetching…' : 'Refresh default USD→INR'}
+                    {usdFxBusy ? '⏳ Fetching USD→INR…' : '🔄 Refresh default USD→INR'}
                   </button>
                 </div>
               </div>
@@ -778,7 +806,7 @@ export function Assets() {
             ? <>Updated <strong style={{ color:'#2563eb' }}>{importToast.updated} holdings</strong> with latest prices</>
             : importToast?.updated > 0
             ? <><strong style={{ color:'#16a34a' }}>{importToast.added} added</strong>, <strong style={{ color:'#2563eb' }}>{importToast.updated} updated</strong></>
-            : <>Imported <strong style={{ color:'#16a34a' }}>{importToast?.added || importToast?.total} new holdings</strong></>
+            : <>Imported <strong style={{ color:'#16a34' }}>{importToast?.added || importToast?.total} new holdings</strong></>
           }
         </div>
       )}
@@ -2597,6 +2625,8 @@ export function Settings({ onToast }) {
   const [localCur, setLocalCur] = useState(settings.currency || 'INR')
   const [localUsdInr, setLocalUsdInr] = useState(() => String(settings.usdInrRate ?? 83))
   const [usdFxBusy, setUsdFxBusy] = useState(false)
+  const [catFixModal, setCatFixModal] = useState(false)
+  const [catFixItems, setCatFixItems] = useState([])
   const fileRef = useState(null)
 
   useEffect(() => {
@@ -2719,9 +2749,6 @@ export function Settings({ onToast }) {
     if (/business|startup|company equity|unlisted|angel invest|pre.?ipo|venture|esop|employee stock/.test(n)) return 'Business Assets'
     return null
   }
-
-  const [catFixModal, setCatFixModal] = useState(false)
-  const [catFixItems, setCatFixItems] = useState([])   // [{asset, suggested, selected, override}]
 
   const scanCategories = () => {
     if (!data?.assets?.length) { onToast('No assets found', 'info'); return }

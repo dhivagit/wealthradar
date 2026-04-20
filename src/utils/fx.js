@@ -4,36 +4,90 @@
  * Note: some FX endpoints block browser requests via CORS. This function tries
  * a couple of CORS-friendly sources with a short timeout.
  */
-export async function fetchUsdInrRate({ timeoutMs = 8000 } = {}) {
-  const controllers = []
-  const timeout = (ms) => new Promise((_, rej) => setTimeout(() => rej(new Error('FX timeout')), ms))
-
-  const tryJson = async (url, pickRate) => {
-    const ac = new AbortController()
-    controllers.push(ac)
-    const res = await fetch(url, { signal: ac.signal, cache: 'no-store' })
-    if (!res.ok) throw new Error(`FX HTTP ${res.status}`)
-    const data = await res.json()
-    const rate = pickRate(data)
-    if (typeof rate !== 'number' || !Number.isFinite(rate) || rate <= 0) throw new Error('Invalid INR rate')
-    return rate
-  }
-
+export const fetchUsdInrRate = async () => {
   try {
-    // 1) open.er-api.com (CORS-friendly)
-    return await Promise.race([
-      tryJson('https://open.er-api.com/v6/latest/USD', (d) => d?.rates?.INR),
-      timeout(timeoutMs),
-    ])
-  } catch {
-    try {
-      // 2) Frankfurter (ECB-based) — may be blocked on some networks
-      return await Promise.race([
-        tryJson('https://api.frankfurter.app/latest?from=USD&to=INR', (d) => d?.rates?.INR),
-        timeout(timeoutMs),
-      ])
-    } finally {
-      controllers.forEach(c => { try { c.abort() } catch {} })
+    // Try multiple reliable sources in order of preference
+    const sources = [
+      // Source 1: Frankfurter API (EU-based, free, no API key needed, ~1-2 min delay)
+      {
+        name: 'Frankfurter',
+        fn: async () => {
+          const r = await Promise.race([
+            fetch('https://api.frankfurter.app/latest?from=USD&to=INR'),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 6000))
+          ])
+          if (!r.ok) throw new Error('Failed')
+          const d = await r.json()
+          return d.rates.INR
+        }
+      },
+      // Source 2: ExchangeRate-API (free tier, 1500 calls/month, very accurate, real-time)
+      {
+        name: 'ExchangeRate-API',
+        fn: async () => {
+          const r = await Promise.race([
+            fetch('https://api.exchangerate-api.com/v4/latest/USD'),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 6000))
+          ])
+          if (!r.ok) throw new Error('Failed')
+          const d = await r.json()
+          return d.rates.INR
+        }
+      },
+      // Source 3: @fawazahmed0 currency API (free, reliable, updated daily)
+      {
+        name: 'fawazahmed0 CDN',
+        fn: async () => {
+          const r = await Promise.race([
+            fetch('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json'),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 6000))
+          ])
+          if (!r.ok) throw new Error('Failed')
+          const d = await r.json()
+          return d.usd.inr
+        }
+      },
+      // Source 4: CBOE/Financial data (HTTPS, no-cors may be needed)
+      {
+        name: 'X-Rate',
+        fn: async () => {
+          const r = await Promise.race([
+            fetch('https://xrates.app/latest?from=USD&to=INR'),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 6000))
+          ])
+          if (!r.ok) throw new Error('Failed')
+          const d = await r.json()
+          return d.rates.INR
+        }
+      },
+    ]
+
+    let lastError = new Error('No sources available')
+    
+    // Try each source sequentially until one succeeds
+    for (const source of sources) {
+      try {
+        const rate = await source.fn()
+        
+        // Validate rate is reasonable (between ₹70 and ₹150 — typical historical range)
+        if (rate && typeof rate === 'number' && rate > 70 && rate < 150) {
+          // Round to 2 decimal places for clean display
+          const rounded = Math.round(rate * 100) / 100
+          console.log(`✓ USD→INR rate fetched from ${source.name}: ₹${rounded}`)
+          return rounded
+        } else {
+          throw new Error(`Rate out of range: ${rate}`)
+        }
+      } catch (err) {
+        lastError = err
+        console.warn(`⚠ USD→INR fetch from ${source.name}: ${err.message}`)
+        continue
+      }
     }
+    
+    throw new Error(`All USD→INR sources failed. Last: ${lastError.message}`)
+  } catch (err) {
+    console.error('❌ fetchUsdInrRate error:', err.message)
+    throw err
   }
 }
